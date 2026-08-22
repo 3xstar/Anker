@@ -114,21 +114,27 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
-def get_config(addon_manager=None) -> Dict[str, Any]:
+def get_config(addon_manager=None, module_name: str = "") -> Dict[str, Any]:
     """
     Возвращает конфигурацию аддона, объединяя пользовательские настройки
     с дефолтными значениями.
 
+    ВАЖНО: module_name должно быть именем самого аддона (пакета верхнего
+    уровня), т.е. тем __name__, который доступен в __init__.py аддона.
+    Именно под этим ключом Anki хранит настройки. Нельзя полагаться на
+    __name__ внутри этого модуля — он равен "anker.config", а не "anker".
+
     Args:
         addon_manager: Экземпляр AddonManager (из mw.addonManager).
+        module_name: Имя аддона для getConfig (обычно __name__ из __init__.py).
 
     Returns:
         Словарь с полной конфигурацией.
     """
     config = dict(DEFAULT_CONFIG)
-    if addon_manager is not None:
+    if addon_manager is not None and module_name:
         try:
-            user_config = addon_manager.getConfig(__name__)
+            user_config = addon_manager.getConfig(module_name)
             if user_config:
                 # Рекурсивно обновляем только известные ключи
                 _deep_update(config, user_config)

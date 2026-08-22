@@ -16,9 +16,15 @@ import json
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMenu, QTimer
-from aqt.utils import showInfo, tooltip
+# Импорты Anki — доступны только внутри запущенного Anki.
+# При импорте вне Anki (например, pytest) модуль не падает.
+try:
+    from aqt import gui_hooks, mw
+    from aqt.qt import QAction, QMenu, QTimer
+    from aqt.utils import showInfo, tooltip
+    _ANKI_AVAILABLE = True
+except ImportError:
+    _ANKI_AVAILABLE = False
 
 from . import config as cfg
 from . import metrics
@@ -107,7 +113,7 @@ def _daily_routine() -> None:
     if not state:
         state = _default_state()
 
-    config = cfg.get_config(mw.addonManager)
+    config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
 
     # Если нет отслеживаемых колод — плагин неактивен
@@ -352,7 +358,7 @@ def _apply_overrides_on_startup() -> None:
     state = _load_state()
     if not state:
         return
-    config = cfg.get_config(mw.addonManager)
+    config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
     if not tracked_ids:
         return
@@ -402,7 +408,7 @@ def _add_menu_item() -> None:
 
 def _on_select_decks() -> None:
     """Обработчик выбора колод."""
-    selected = deck_selector.show_deck_selector()
+    selected = deck_selector.show_deck_selector(__name__)
     if selected is not None:
         try:
             config = mw.addonManager.getConfig(__name__) or {}
@@ -462,4 +468,5 @@ def _on_main_window_init() -> None:
     QTimer.singleShot(2000, _daily_routine)
 
 
-gui_hooks.main_window_did_init.append(_on_main_window_init)
+if _ANKI_AVAILABLE:
+    gui_hooks.main_window_did_init.append(_on_main_window_init)

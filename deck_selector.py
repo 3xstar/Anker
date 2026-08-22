@@ -27,11 +27,12 @@ from aqt.qt import (
 class DeckSelectorDialog(QDialog):
     """Диалог выбора отслеживаемых колод с поиском."""
 
-    def __init__(self, parent=None):
+    def __init__(self, addon_module_name: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Anker — выбор колод")
         self.setMinimumSize(420, 480)
 
+        self._addon_module_name = addon_module_name
         self._all_decks: List[tuple] = []  # [(deck_id, name), ...]
         self._selected: Set[int] = set()
 
@@ -85,7 +86,7 @@ class DeckSelectorDialog(QDialog):
     def _current_selected(self) -> List[int]:
         """Читает список отслеживаемых колод из конфига аддона."""
         try:
-            config = mw.addonManager.getConfig(__name__)
+            config = mw.addonManager.getConfig(self._addon_module_name)
             return list(config.get("tracked_deck_ids", [])) if config else []
         except Exception:
             return []
@@ -130,12 +131,15 @@ class DeckSelectorDialog(QDialog):
         return sorted(self._selected)
 
 
-def show_deck_selector(parent=None) -> Optional[List[int]]:
+def show_deck_selector(addon_module_name: str, parent=None) -> Optional[List[int]]:
     """
     Показывает диалог выбора колод. Возвращает список выбранных ID колод
     (None, если пользователь отменил).
+
+    Args:
+        addon_module_name: имя аддона (__name__ из __init__.py).
     """
-    dialog = DeckSelectorDialog(parent or mw)
+    dialog = DeckSelectorDialog(addon_module_name, parent or mw)
     if dialog.exec():
         return dialog.selected_deck_ids()
     return None

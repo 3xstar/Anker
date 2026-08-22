@@ -492,8 +492,10 @@ def show_day_of_week_picker(
     webview = AnkiWebView()
     webview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    # Собираем переключения дней
-    toggled_days: Dict[int, bool] = {}
+    # Собираем переключения дней.
+    # ВАЖНО: предзаполняем уже существующими правилами, чтобы при нажатии
+    # «Готово» без изменений ранее сохранённые дни не стёрлись.
+    toggled_days: Dict[int, bool] = {day: True for day in current_rules}
 
     def handle_pycmd(cmd: str) -> None:
         nonlocal toggled_days
