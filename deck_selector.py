@@ -11,17 +11,31 @@ deck_selector.py — UI списка колод с чекбоксами (opt-in,
 
 from typing import List, Optional, Set
 
-from aqt import mw
-from aqt.qt import (
-    QDialog,
-    QHBoxLayout,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QVBoxLayout,
-    Qt,
-)
+try:
+    from aqt import mw
+    from aqt.qt import (
+        QDialog,
+        QHBoxLayout,
+        QLineEdit,
+        QListWidget,
+        QListWidgetItem,
+        QPushButton,
+        QVBoxLayout,
+        Qt,
+    )
+    _ANKI_AVAILABLE = True
+except ImportError:
+    _ANKI_AVAILABLE = False
+    # Заглушки для импорта вне Anki (например, в тестах)
+    QDialog = object
+    QHBoxLayout = object
+    QLineEdit = object
+    QListWidget = object
+    QListWidgetItem = object
+    QPushButton = object
+    QVBoxLayout = object
+    Qt = object
+    mw = None
 
 
 class DeckSelectorDialog(QDialog):
@@ -75,7 +89,7 @@ class DeckSelectorDialog(QDialog):
         except Exception:
             decks = []
 
-        self._all_decks = [(did, name) for name, did in decks if name != "Default"]
+        self._all_decks = [(d.id, d.name) for d in decks if d.name != "Default"]
 
         # Текущий выбор из конфига аддона
         current = self._current_selected()
@@ -102,18 +116,18 @@ class DeckSelectorDialog(QDialog):
             if query and query not in name.lower():
                 continue
             item = QListWidgetItem(name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setData(Qt.UserRole, did)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setData(Qt.ItemDataRole.UserRole, did)
             item.setCheckState(
-                Qt.Checked if did in self._selected else Qt.Unchecked
+                Qt.CheckState.Checked if did in self._selected else Qt.CheckState.Unchecked
             )
             self.deck_list.addItem(item)
         self.deck_list.blockSignals(False)
 
     def _on_item_changed(self, item: QListWidgetItem) -> None:
         """Обновляет множество выбранных при клике по чекбоксу."""
-        did = item.data(Qt.UserRole)
-        if item.checkState() == Qt.Checked:
+        did = item.data(Qt.ItemDataRole.UserRole)
+        if item.checkState() == Qt.CheckState.Checked:
             self._selected.add(did)
         else:
             self._selected.discard(did)

@@ -55,7 +55,7 @@ def set_day_rule(
     """
     state = dict(state)
     rules = dict(state.get("day_of_week_rules", {}))
-    rules[int(weekday)] = float(multiplier)
+    rules[str(int(weekday))] = float(multiplier)
     state["day_of_week_rules"] = rules
     return state
 
@@ -64,7 +64,7 @@ def remove_day_rule(state: Dict[str, Any], weekday: int) -> Dict[str, Any]:
     """Удаляет правило для дня недели."""
     state = dict(state)
     rules = dict(state.get("day_of_week_rules", {}))
-    rules.pop(int(weekday), None)
+    rules.pop(str(int(weekday)), None)
     state["day_of_week_rules"] = rules
     return state
 
@@ -72,7 +72,7 @@ def remove_day_rule(state: Dict[str, Any], weekday: int) -> Dict[str, Any]:
 def get_day_rule(state: Dict[str, Any], weekday: int) -> Optional[float]:
     """Возвращает множитель правила для дня недели или None, если правила нет."""
     rules = state.get("day_of_week_rules", {})
-    return rules.get(int(weekday))
+    return rules.get(str(int(weekday)))
 
 
 # ── временный лёгкий режим ─────────────────────────────────────────────────

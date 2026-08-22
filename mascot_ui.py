@@ -11,33 +11,29 @@ mascot_ui.py — обёртка над AnkiWebView, генерация HTML, п�
 Никаких внешних CDN/шрифтов/скриптов — всё офлайн.
 """
 
-import os
-import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List
 
-from aqt import mw
-from aqt.qt import (
-    QDialog,
-    QVBoxLayout,
-    Qt,
-    QSizePolicy,
-)
-from aqt.webview import AnkiWebView
+from .html_builder import build_dialog_html, build_day_picker_html
 
-
-# ── Пути к изображениям ────────────────────────────────────────────────────
-
-def _assets_dir() -> str:
-    """Абсолютный путь к папке assets/ аддона."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-
-
-def _image_url(filename: str) -> str:
-    """file:// URL для изображения из assets/."""
-    path = os.path.join(_assets_dir(), filename)
-    # На Windows путь нужно преобразовать: C:\... → file:///C:/...
-    path = path.replace("\\", "/")
-    return f"file:///{path}"
+try:
+    from aqt import mw
+    from aqt.qt import (
+        QDialog,
+        QVBoxLayout,
+        Qt,
+        QSizePolicy,
+    )
+    from aqt.webview import AnkiWebView
+    _ANKI_AVAILABLE = True
+except ImportError:
+    _ANKI_AVAILABLE = False
+    # Заглушки для импорта вне Anki (например, в тестах)
+    QDialog = object
+    QVBoxLayout = object
+    Qt = object
+    QSizePolicy = object
+    AnkiWebView = object
+    mw = None
 
 
 # ── Константы изображений по сценариям ─────────────────────────────────────
@@ -48,159 +44,6 @@ IMG_UNDERSTANDING = "understanding.png"
 IMG_SAD = "sad.png"
 IMG_ENTHUSIASTIC = "enthusiastic.png"
 IMG_PROUDED = "prouded.png"
-
-
-# ── HTML-шаблон ────────────────────────────────────────────────────────────
-
-HTML_TEMPLATE = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    background: #f5f0eb;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    min-height: 100vh;
-    padding: 20px 20px 0 20px;
-  }
-
-  /* ── Спич-бабл ── */
-  .bubble-wrapper {
-    width: 100%;
-    max-width: 420px;
-    margin-bottom: 10px;
-  }
-  .bubble {
-    position: relative;
-    background: #ffffff;
-    border: 2px solid #d4c5b9;
-    border-radius: 20px;
-    padding: 18px 22px;
-    font-size: 15px;
-    line-height: 1.55;
-    color: #3a322e;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }
-  /* Хвостик спич-бабла (указывает на персонажа слева снизу) */
-  .bubble::after {
-    content: "";
-    position: absolute;
-    bottom: -14px;
-    left: 50px;
-    width: 0;
-    height: 0;
-    border-left: 12px solid transparent;
-    border-right: 12px solid transparent;
-    border-top: 14px solid #ffffff;
-  }
-  .bubble::before {
-    content: "";
-    position: absolute;
-    bottom: -18px;
-    left: 48px;
-    width: 0;
-    height: 0;
-    border-left: 14px solid transparent;
-    border-right: 14px solid transparent;
-    border-top: 16px solid #d4c5b9;
-  }
-
-  /* ── Персонаж + кнопки ── */
-  .bottom-area {
-    display: flex;
-    align-items: flex-end;
-    width: 100%;
-    max-width: 420px;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  .character {
-    flex-shrink: 0;
-  }
-  .character img {
-    width: 96px;
-    height: auto;
-    image-rendering: pixelated;
-    display: block;
-  }
-  .buttons {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-bottom: 8px;
-  }
-  .btn {
-    display: block;
-    width: 100%;
-    padding: 10px 14px;
-    font-size: 14px;
-    font-family: inherit;
-    color: #3a322e;
-    background: #ffffff;
-    border: 2px solid #c4b5a5;
-    border-radius: 14px;
-    cursor: pointer;
-    text-align: center;
-    transition: background 0.15s;
-  }
-  .btn:hover {
-    background: #f0e8dd;
-  }
-  .btn:active {
-    background: #e0d5c5;
-  }
-  .btn.primary {
-    background: #e8dcc8;
-    border-color: #b8a080;
-    font-weight: 600;
-  }
-  .btn.primary:hover {
-    background: #dccca8;
-  }
-</style>
-</head>
-<body>
-  <div class="bubble-wrapper">
-    <div class="bubble">{message}</div>
-  </div>
-  <div class="bottom-area">
-    <div class="character">
-      <img src="{image_url}" alt="Anker">
-    </div>
-    <div class="buttons">
-      {buttons_html}
-    </div>
-  </div>
-</body>
-</html>"""
-
-
-def _build_buttons_html(buttons: List[Dict[str, str]]) -> str:
-    """
-    Генерирует HTML для кнопок.
-
-    Каждая кнопка — словарь с ключами:
-      - label: текст на кнопке
-      - action: pycmd-команда (без префикса "anker:")
-      - primary: bool (опционально, добавляет класс primary)
-    """
-    parts = []
-    for btn in buttons:
-        label = btn.get("label", "")
-        action = btn.get("action", "")
-        css_class = "btn"
-        if btn.get("primary"):
-            css_class += " primary"
-        parts.append(
-            f'<button class="{css_class}" onclick="pycmd(\'anker:{action}\')">{label}</button>'
-        )
-    return "\n".join(parts)
 
 
 # ── Класс диалога ──────────────────────────────────────────────────────────
@@ -226,27 +69,23 @@ class MascotDialog(QDialog):
         Args:
             image_filename: имя файла изображения (например, "neutral.png").
             message: текст в спич-бабле.
-            buttons: список кнопок (см. _build_buttons_html).
+            buttons: список кнопок (см. html_builder.build_buttons_html).
             on_action: callback при нажатии кнопки, получает action-строку.
         """
         super().__init__(parent or mw)
         self._on_action = on_action
         self.setWindowTitle("Anker")
-        self.setMinimumSize(460, 380)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setFixedSize(460, 380)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.webview = AnkiWebView()
-        self.webview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.webview.set_bridge_command(self._handle_pycmd)
+        self.webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.webview.set_bridge_command(self._handle_pycmd, self)
 
-        html = HTML_TEMPLATE.format(
-            message=message,
-            image_url=_image_url(image_filename),
-            buttons_html=_build_buttons_html(buttons),
-        )
+        html = build_dialog_html(image_filename, message, buttons)
         self.webview.stdHtml(html)
         layout.addWidget(self.webview)
 
@@ -405,14 +244,20 @@ def show_day_of_week_picker(
     Использует neutral.png (нейтральный контекст настройки).
 
     current_rules: {weekday: multiplier, ...}, weekday 1=Пн..7=Вс.
+                   Ключи могут быть int или str (после JSON round-trip).
     """
+    # Нормализуем ключи: после JSON round-trip они становятся строками
+    normalized_rules: Dict[int, float] = {}
+    for k, v in current_rules.items():
+        normalized_rules[int(k)] = v
+
     image = IMG_NEUTRAL
     day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
     # Строим чекбоксы как HTML (внутри спич-бабла)
     checkboxes_html = ""
     for i, name in enumerate(day_names, 1):
-        checked = "checked" if i in current_rules else ""
+        checked = "checked" if i in normalized_rules else ""
         checkboxes_html += (
             f'<label style="display:inline-block;margin:4px 8px;cursor:pointer;">'
             f'<input type="checkbox" id="day_{i}" {checked} '
@@ -425,77 +270,22 @@ def show_day_of_week_picker(
         "Отметь нужные дни — в эти дни новые карточки добавляться не будут."
     )
 
-    # Для этого диалога нужен кастомный HTML с чекбоксами
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>
-  * {{ margin:0; padding:0; box-sizing:border-box; }}
-  body {{
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    background: #f5f0eb;
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: flex-end; min-height: 100vh; padding: 20px 20px 0 20px;
-  }}
-  .bubble-wrapper {{ width:100%; max-width:420px; margin-bottom:10px; }}
-  .bubble {{
-    position:relative; background:#fff; border:2px solid #d4c5b9;
-    border-radius:20px; padding:18px 22px; font-size:15px; line-height:1.55;
-    color:#3a322e; box-shadow:0 2px 8px rgba(0,0,0,0.06);
-  }}
-  .bubble::after {{
-    content:""; position:absolute; bottom:-14px; left:50px;
-    border-left:12px solid transparent; border-right:12px solid transparent;
-    border-top:14px solid #fff;
-  }}
-  .bubble::before {{
-    content:""; position:absolute; bottom:-18px; left:48px;
-    border-left:14px solid transparent; border-right:14px solid transparent;
-    border-top:16px solid #d4c5b9;
-  }}
-  .bottom-area {{ display:flex; align-items:flex-end; width:100%; max-width:420px; gap:16px; margin-bottom:16px; }}
-  .character img {{ width:96px; height:auto; image-rendering:pixelated; display:block; }}
-  .buttons {{ flex:1; display:flex; flex-direction:column; gap:8px; padding-bottom:8px; }}
-  .btn {{
-    display:block; width:100%; padding:10px 14px; font-size:14px; font-family:inherit;
-    color:#3a322e; background:#fff; border:2px solid #c4b5a5; border-radius:14px;
-    cursor:pointer; text-align:center;
-  }}
-  .btn:hover {{ background:#f0e8dd; }}
-  .btn.primary {{ background:#e8dcc8; border-color:#b8a080; font-weight:600; }}
-  .btn.primary:hover {{ background:#dccca8; }}
-  .day-checkboxes {{ margin:10px 0; }}
-  .day-checkboxes label {{ display:inline-block; margin:4px 8px; cursor:pointer; font-size:14px; }}
-</style></head>
-<body>
-  <div class="bubble-wrapper">
-    <div class="bubble">
-      {message}
-      <div class="day-checkboxes">{checkboxes_html}</div>
-    </div>
-  </div>
-  <div class="bottom-area">
-    <div class="character"><img src="{_image_url(image)}" alt="Anker"></div>
-    <div class="buttons">
-      <button class="btn primary" onclick="pycmd('anker:days_done')">Готово</button>
-      <button class="btn" onclick="pycmd('anker:days_cancel')">Отмена</button>
-    </div>
-  </div>
-</body></html>"""
+    html = build_day_picker_html(image, message, checkboxes_html)
 
     dialog = QDialog(mw)
     dialog.setWindowTitle("Anker — дни недели")
-    dialog.setMinimumSize(460, 420)
-    dialog.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+    dialog.setFixedSize(460, 420)
+    dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(0, 0, 0, 0)
 
     webview = AnkiWebView()
-    webview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     # Собираем переключения дней.
     # ВАЖНО: предзаполняем уже существующими правилами, чтобы при нажатии
     # «Готово» без изменений ранее сохранённые дни не стёрлись.
-    toggled_days: Dict[int, bool] = {day: True for day in current_rules}
+    toggled_days: Dict[int, bool] = {day: True for day in normalized_rules}
 
     def handle_pycmd(cmd: str) -> None:
         nonlocal toggled_days
@@ -518,7 +308,7 @@ def show_day_of_week_picker(
         elif cmd == "anker:days_cancel":
             dialog.reject()
 
-    webview.set_bridge_command(handle_pycmd)
+    webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
     layout.addWidget(webview)
     dialog.exec()
