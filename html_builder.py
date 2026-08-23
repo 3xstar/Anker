@@ -77,12 +77,16 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     color: __TEXT_COLOR__;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
-  /* Хвостик спич-бабла (указывает на центр персонажа: body padding 20px + img 96px/2 = 68px) */
+  /* Хвостик спич-бабла — указывает точно на центр персонажа.
+     Центр .character: body padding 20px + img 96px/2 = 68px от левого края webview.
+     Отступ от padding edge .bubble: 68 - (body padding 20 + border 2) = 46px.
+     translateX(-50%) центрирует сам хвостик на этой координате. */
   .bubble::after {
     content: "";
     position: absolute;
     bottom: -14px;
-    left: 56px;
+    left: 46px;
+    transform: translateX(-50%);
     width: 0;
     height: 0;
     border-left: 12px solid transparent;
@@ -93,7 +97,8 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     content: "";
     position: absolute;
     bottom: -18px;
-    left: 54px;
+    left: 46px;
+    transform: translateX(-50%);
     width: 0;
     height: 0;
     border-left: 14px solid transparent;
