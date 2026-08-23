@@ -395,6 +395,11 @@ def _add_menu_item() -> None:
     select_action.triggered.connect(_on_select_decks)
     anker_menu.addAction(select_action)
 
+    # Запустить анализ сейчас (тест) — реальный расчётный путь
+    force_action = QAction("Запустить анализ сейчас (тест)", mw)
+    force_action.triggered.connect(_on_force_analysis)
+    anker_menu.addAction(force_action)
+
     # Показать маскота (тест)
     test_action = QAction("Показать маскота (тест)", mw)
     test_action.triggered.connect(_on_test_mascot)
@@ -437,6 +442,94 @@ def _on_test_mascot() -> None:
         tooltip(f"Anker test action: {action}")
 
     mascot_ui.show_planned_visit(test_decision, on_action)
+
+
+def _on_force_analysis() -> None:
+    """Принудительный запуск анализа (тест) — в обход расписания и cooldown."""
+    _force_analysis()
+
+
+def _force_analysis() -> None:
+    """
+    Выполняет полный расчётный путь (метрики → anomaly → decision_engine →
+    диалог) в обход visit_frequency и cooldown, но с сохранением проверки
+    min_history_days.
+
+    В отличие от _daily_routine():
+      - Не проверяет last_check_day (можно запускать многократно).
+      - Игнорирует cooldown_days (decision_engine) и anomaly_cooldown_days.
+      - Игнорирует visit_frequency — всегда показывает диалог, если применимо.
+      - НЕ сохраняет состояние (streaks, last_check_day и т.д.) — это тестовый
+        прогон, не влияющий на обычный цикл.
+      - Если min_history_days не выполнен — явно сообщает пользователю.
+    """
+    today = datetime.date.today()
+    state = _load_state()
+    if not state:
+        state = _default_state()
+
+    config = cfg.get_config(mw.addonManager, __name__)
+    tracked_ids = list(config.get("tracked_deck_ids", []))
+
+    if not tracked_ids:
+        tooltip("Anker: нет отслеживаемых колод. Сначала выберите колоды в меню Anker.")
+        return
+
+    # Сбор метрик
+    all_metrics = metrics.collect_metrics(mw.col, tracked_ids, config, today)
+
+    # Проверка min_history_days — явное сообщение, а не тишина
+    if not all_metrics.get("has_enough_history", False):
+        min_days = int(config.get("min_history_days", 7))
+        actual_days = all_metrics.get("history_days", 0)
+        showInfo(
+            f"Недостаточно истории: нужно минимум {min_days} дн. данных, "
+            f"сейчас {actual_days}. Anker пока не может дать рекомендацию.\n\n"
+            f"Совет: для быстрой проверки всех сценариев можно временно "
+            f"занизить min_history_days в конфиге аддона (например, до 1)."
+        )
+        return
+
+    # Обновление streak-счётчиков (без сохранения в стейт — тестовый прогон)
+    streaks = state.get("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
+    too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
+    ret_14d = all_metrics.get("true_retention_14d")
+    too_easy_days = streaks.get("too_easy_days", 0)
+    if ret_14d is not None and ret_14d > too_easy_threshold:
+        too_easy_days += 1
+    else:
+        too_easy_days = 0
+
+    # Anomaly check-in: игнорируем cooldown (last_anomaly_day=None)
+    revlog_rows = metrics.fetch_revlog_rows(
+        mw.col, tracked_ids, today - datetime.timedelta(days=14)
+    )
+    anomaly_today = anomaly.detect_anomaly(
+        revlog_rows, config, today, None  # None = без cooldown
+    )
+
+    if anomaly_today:
+        _show_anomaly_flow(config, state, tracked_ids, today)
+        return
+
+    # Decision engine: игнорируем cooldown (last_change_day=None)
+    current_limits = [_get_deck_limit(did) for did in tracked_ids]
+    avg_limit = sum(current_limits) // max(len(current_limits), 1)
+
+    decision, _ = decision_engine.decide(
+        metrics=all_metrics,
+        config=config,
+        current_limit=avg_limit,
+        last_change_day=None,  # None = без cooldown
+        today=today,
+        prev_ema=state.get("ema_state", {}),
+        anomaly_triggered_today=False,
+        stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
+        too_easy_streak_weeks=too_easy_days // 7,
+    )
+
+    # Всегда показываем плановый визит (игнорируем visit_frequency)
+    _show_planned_visit_flow(decision, config, state, tracked_ids, today)
 
 
 def _on_reset_state() -> None:
