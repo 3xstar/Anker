@@ -13,7 +13,7 @@ mascot_ui.py — обёртка над AnkiWebView, генерация HTML, п�
 
 from typing import Any, Callable, Dict, List
 
-from .html_builder import build_dialog_html, build_day_picker_html
+from .html_builder import build_dialog_html, build_day_picker_html, DEFAULT_THEME_COLORS
 
 try:
     from aqt import mw
@@ -34,6 +34,47 @@ except ImportError:
     QSizePolicy = object
     AnkiWebView = object
     mw = None
+
+
+# ── Цвета темы Anki ────────────────────────────────────────────────────────
+
+def _get_theme_colors() -> Dict[str, str]:
+    """
+    Получает актуальные цвета текущей темы Anki (светлой/тёмной),
+    чтобы диалог Anker визуально не выбивался из интерфейса.
+
+    Использует aqt.theme.theme_manager — официальный API Anki для
+    получения корректных цветов под текущую тему. При недоступности
+    (например, вне Anki) возвращает светлую палитру по умолчанию.
+    """
+    try:
+        from aqt.theme import theme_manager
+
+        bg = theme_manager.qcolor("window-bg").name()
+        text = theme_manager.qcolor("text-fg").name()
+        border = theme_manager.qcolor("border").name()
+
+        # frame-bg доступен не во всех версиях — fallback на canvas
+        try:
+            frame_bg = theme_manager.qcolor("frame-bg").name()
+        except Exception:
+            try:
+                frame_bg = theme_manager.qcolor("canvas").name()
+            except Exception:
+                frame_bg = bg
+
+        # Вычисляем hover/active как полупрозрачное наложение
+        # (работает и в светлой, и в тёмной теме)
+        return {
+            "bg": bg,
+            "frame_bg": frame_bg,
+            "text": text,
+            "border": border,
+            "btn_hover": "rgba(128,128,128,0.15)",
+            "btn_active": "rgba(128,128,128,0.25)",
+        }
+    except Exception:
+        return dict(DEFAULT_THEME_COLORS)
 
 
 # ── Константы изображений по сценариям ─────────────────────────────────────
@@ -78,14 +119,18 @@ class MascotDialog(QDialog):
         self.setFixedSize(460, 380)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
 
+        colors = _get_theme_colors()
+        self.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.webview = AnkiWebView()
         self.webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.webview.set_bridge_command(self._handle_pycmd, self)
+        self.webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
-        html = build_dialog_html(image_filename, message, buttons)
+        html = build_dialog_html(image_filename, message, buttons, colors)
         self.webview.stdHtml(html)
         layout.addWidget(self.webview)
 
@@ -270,17 +315,20 @@ def show_day_of_week_picker(
         "Отметь нужные дни — в эти дни новые карточки добавляться не будут."
     )
 
-    html = build_day_picker_html(image, message, checkboxes_html)
+    colors = _get_theme_colors()
+    html = build_day_picker_html(image, message, checkboxes_html, colors)
 
     dialog = QDialog(mw)
     dialog.setWindowTitle("Anker — дни недели")
     dialog.setFixedSize(460, 420)
     dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
+    dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(0, 0, 0, 0)
 
     webview = AnkiWebView()
     webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
     # Собираем переключения дней.
     # ВАЖНО: предзаполняем уже существующими правилами, чтобы при нажатии

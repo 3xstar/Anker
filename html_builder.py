@@ -53,7 +53,7 @@ def image_data_uri(filename: str) -> str:
 SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, "Segoe UI", sans-serif;
-    background: #f5f5f7;
+    background: __BG_COLOR__;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -68,37 +68,37 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   }
   .bubble {
     position: relative;
-    background: #ffffff;
-    border: 2px solid #d0d0d5;
+    background: __FRAME_BG_COLOR__;
+    border: 2px solid __BORDER_COLOR__;
     border-radius: 20px;
     padding: 18px 22px;
     font-size: 15px;
     line-height: 1.55;
-    color: #1f1f23;
+    color: __TEXT_COLOR__;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
-  /* Хвостик спич-бабла (указывает на персонажа слева снизу) */
+  /* Хвостик спич-бабла (указывает на центр персонажа: body padding 20px + img 96px/2 = 68px) */
   .bubble::after {
     content: "";
     position: absolute;
     bottom: -14px;
-    left: 50px;
+    left: 56px;
     width: 0;
     height: 0;
     border-left: 12px solid transparent;
     border-right: 12px solid transparent;
-    border-top: 14px solid #ffffff;
+    border-top: 14px solid __FRAME_BG_COLOR__;
   }
   .bubble::before {
     content: "";
     position: absolute;
     bottom: -18px;
-    left: 48px;
+    left: 54px;
     width: 0;
     height: 0;
     border-left: 14px solid transparent;
     border-right: 14px solid transparent;
-    border-top: 16px solid #d0d0d5;
+    border-top: 16px solid __BORDER_COLOR__;
   }
 
   /* ── Персонаж + кнопки ── */
@@ -132,19 +132,19 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     padding: 10px 14px;
     font-size: 14px;
     font-family: inherit;
-    color: #1f1f23;
-    background: #ffffff;
-    border: 2px solid #c8c8ce;
+    color: __TEXT_COLOR__;
+    background: __FRAME_BG_COLOR__;
+    border: 2px solid __BORDER_COLOR__;
     border-radius: 14px;
     cursor: pointer;
     text-align: center;
     transition: background 0.15s;
   }
   .btn:hover {
-    background: #eceef1;
+    background: __BTN_HOVER_COLOR__;
   }
   .btn:active {
-    background: #dfe1e5;
+    background: __BTN_ACTIVE_COLOR__;
   }
   .btn.primary {
     background: #0078d4;
@@ -209,6 +209,31 @@ __CSS__
 </body></html>"""
 
 
+# ── Цвета темы по умолчанию (светлая тема Anki) ────────────────────────────
+
+DEFAULT_THEME_COLORS: Dict[str, str] = {
+    "bg": "#f5f5f7",
+    "frame_bg": "#ffffff",
+    "text": "#1f1f23",
+    "border": "#d0d0d5",
+    "btn_hover": "#eceef1",
+    "btn_active": "#dfe1e5",
+}
+
+
+def _apply_theme_colors(css: str, colors: Dict[str, str]) -> str:
+    """Подставляет цвета темы в CSS-шаблон через маркеры __KEY__."""
+    return (
+        css
+        .replace("__BG_COLOR__", colors.get("bg", DEFAULT_THEME_COLORS["bg"]))
+        .replace("__FRAME_BG_COLOR__", colors.get("frame_bg", DEFAULT_THEME_COLORS["frame_bg"]))
+        .replace("__TEXT_COLOR__", colors.get("text", DEFAULT_THEME_COLORS["text"]))
+        .replace("__BORDER_COLOR__", colors.get("border", DEFAULT_THEME_COLORS["border"]))
+        .replace("__BTN_HOVER_COLOR__", colors.get("btn_hover", DEFAULT_THEME_COLORS["btn_hover"]))
+        .replace("__BTN_ACTIVE_COLOR__", colors.get("btn_active", DEFAULT_THEME_COLORS["btn_active"]))
+    )
+
+
 # ── Чистые функции сборки HTML ─────────────────────────────────────────────
 
 def build_buttons_html(buttons: List[Dict[str, str]]) -> str:
@@ -237,6 +262,7 @@ def build_dialog_html(
     image_filename: str,
     message: str,
     buttons: List[Dict[str, str]],
+    theme_colors: Dict[str, str] | None = None,
 ) -> str:
     """
     Собирает полный HTML основного диалога маскота.
@@ -245,13 +271,18 @@ def build_dialog_html(
         image_filename: имя файла изображения (например, "neutral.png").
         message: текст в спич-бабле.
         buttons: список кнопок (см. build_buttons_html).
+        theme_colors: словарь цветов темы (bg, frame_bg, text, border, ...).
+                      Если None — используются светлые значения по умолчанию.
 
     Returns:
         Готовая HTML-строка для AnkiWebView.
     """
+    if theme_colors is None:
+        theme_colors = DEFAULT_THEME_COLORS
+    css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
     return (
         HTML_TEMPLATE
-        .replace("__CSS__", SHARED_DIALOG_CSS)
+        .replace("__CSS__", css)
         .replace("__MESSAGE__", message)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__BUTTONS_HTML__", build_buttons_html(buttons))
@@ -262,6 +293,7 @@ def build_day_picker_html(
     image_filename: str,
     message: str,
     checkboxes_html: str,
+    theme_colors: Dict[str, str] | None = None,
 ) -> str:
     """
     Собирает полный HTML диалога выбора дней недели.
@@ -270,13 +302,18 @@ def build_day_picker_html(
         image_filename: имя файла изображения (например, "neutral.png").
         message: текст в спич-бабле.
         checkboxes_html: готовый HTML чекбоксов дней недели.
+        theme_colors: словарь цветов темы (bg, frame_bg, text, border, ...).
+                      Если None — используются светлые значения по умолчанию.
 
     Returns:
         Готовая HTML-строка для AnkiWebView.
     """
+    if theme_colors is None:
+        theme_colors = DEFAULT_THEME_COLORS
+    css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
     return (
         DAY_PICKER_TEMPLATE
-        .replace("__CSS__", SHARED_DIALOG_CSS)
+        .replace("__CSS__", css)
         .replace("__MESSAGE__", message)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__CHECKBOXES_HTML__", checkboxes_html)
