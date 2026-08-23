@@ -2,13 +2,18 @@
 __init__.py — точка входа аддона Anker.
 
 Регистрирует хуки, пункт меню, управляет ежедневным циклом:
-  1. Фоновый расчёт метрик (ежедневно, без UI).
+  1. Фоновый расчёт метрик (ежедневно, без UI) — отдельно по каждой колоде.
   2. Плановый визит маскота (по настраиваемому расписанию).
   3. Anomaly check-in (событийный, при резком скачке Again-rate).
 
 Правило приоритета (раздел 4 ТЗ): если в один день сработали anomaly-триггер
 и плановый визит — показывается только anomaly-диалог, плановый визит
 откладывается до следующего цикла.
+
+Архитектура (v0.2): весь пайплайн (метрики → anomaly → decision) выполняется
+отдельно для каждой отслеживаемой колоды. Состояние (ema, streaks, overrides)
+хранится per-deck. Если несколько колод требуют диалога в один день — они
+показываются последовательно.
 """
 
 import datetime
@@ -65,9 +70,16 @@ def _save_state(state: Dict[str, Any]) -> None:
 
 
 def _default_state() -> Dict[str, Any]:
-    """Возвращает состояние по умолчанию."""
+    """Возвращает состояние по умолчанию (v0.2: per-deck)."""
     return {
         "last_check_day": None,
+        "decks": {},  # {str(deck_id): {ema_state, streaks, ...}}
+    }
+
+
+def _default_deck_state() -> Dict[str, Any]:
+    """Возвращает состояние одной колоды по умолчанию."""
+    return {
         "last_change_day": None,
         "last_anomaly_day": None,
         "last_visit_day": None,
@@ -78,6 +90,24 @@ def _default_state() -> Dict[str, Any]:
             "too_easy_days": 0,
         },
     }
+
+
+def _migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Миграция со старого (плоского) формата состояния на per-deck.
+    Если обнаружен старый формат — сбрасываем состояние (некритичные данные).
+    """
+    if "decks" not in state:
+        return _default_state()
+    return state
+
+
+def _get_deck_state(state: Dict[str, Any], deck_id: int) -> Dict[str, Any]:
+    """Возвращает (и при необходимости создаёт) per-deck состояние."""
+    key = str(deck_id)
+    if key not in state["decks"]:
+        state["decks"][key] = _default_deck_state()
+    return state["decks"][key]
 
 
 # ── Работа с лимитами колод ────────────────────────────────────────────────
@@ -101,137 +131,179 @@ def _set_deck_limit(did: int, limit: int) -> None:
         tooltip(f"Anker: не удалось изменить лимит колоды: {e}")
 
 
-# ── Ежедневная рутина ──────────────────────────────────────────────────────
+# ── Ежедневная рутина (per-deck) ───────────────────────────────────────────
 
 def _daily_routine() -> None:
     """
-    Выполняет ежедневный фоновый расчёт метрик и, при необходимости,
-    показывает диалог маскота (anomaly или плановый визит).
+    Выполняет ежедневный фоновый расчёт метрик для каждой отслеживаемой
+    колоды отдельно. Если несколько колод требуют диалога — показывает
+    их последовательно.
     """
     today = datetime.date.today()
     state = _load_state()
     if not state:
         state = _default_state()
+    state = _migrate_state(state)
 
     config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
 
-    # Если нет отслеживаемых колод — плагин неактивен
     if not tracked_ids:
         return
 
-    # Проверяем, не запускали ли уже сегодня
     last_check = state.get("last_check_day")
     if last_check == today.isoformat():
-        return  # уже проверяли сегодня
+        return
 
-    # Обновляем дату последней проверки
     state["last_check_day"] = today.isoformat()
 
-    # Срок действия лёгкого режима
-    state["overrides"], light_expired = schedule_overrides.expire_light_mode_if_needed(
-        state["overrides"], today
-    )
+    # Собираем очередь диалогов: (type, deck_id, deck_name, decision|None)
+    pending: List[Tuple[str, int, str, Any]] = []
 
-    # ── Сбор метрик (агрегированно по всем отслеживаемым колодам) ──
-    all_metrics = metrics.collect_metrics(mw.col, tracked_ids, config, today)
+    for deck_id in tracked_ids:
+        try:
+            deck_name = mw.col.decks.name(deck_id)
+        except Exception:
+            deck_name = f"Колода #{deck_id}"
 
-    # ── Обновление streak-счётчиков ──
-    streaks = state.setdefault("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
+        ds = _get_deck_state(state, deck_id)
 
-    # Проверка «слишком легко»: retention > порога
-    too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
-    ret_14d = all_metrics.get("true_retention_14d")
-    if ret_14d is not None and ret_14d > too_easy_threshold:
-        streaks["too_easy_days"] = streaks.get("too_easy_days", 0) + 1
-    else:
-        streaks["too_easy_days"] = 0
+        # Срок действия лёгкого режима
+        ds["overrides"], _ = schedule_overrides.expire_light_mode_if_needed(
+            ds["overrides"], today
+        )
 
-    # ── Anomaly check-in ──
-    revlog_rows = metrics.fetch_revlog_rows(mw.col, tracked_ids, today - datetime.timedelta(days=14))
-    anomaly_today = anomaly.detect_anomaly(
-        revlog_rows,
-        config,
-        today,
-        _parse_date(state.get("last_anomaly_day")),
-    )
+        # Сбор метрик для этой колоды
+        deck_metrics = metrics.collect_metrics(mw.col, [deck_id], config, today)
 
-    if anomaly_today:
-        streaks["anomaly_free_days"] = 0
-        state["last_anomaly_day"] = today.isoformat()
-        _save_state(state)
-        # Показываем anomaly-диалог (правило приоритета: anomaly > плановый визит)
-        _show_anomaly_flow(config, state, tracked_ids, today)
-        return
-    else:
+        # Streaks
+        streaks = ds.setdefault("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
+        too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
+        ret_14d = deck_metrics.get("true_retention_14d")
+        if ret_14d is not None and ret_14d > too_easy_threshold:
+            streaks["too_easy_days"] = streaks.get("too_easy_days", 0) + 1
+        else:
+            streaks["too_easy_days"] = 0
+
+        # Anomaly check-in
+        revlog_rows = metrics.fetch_revlog_rows(
+            mw.col, [deck_id], today - datetime.timedelta(days=14)
+        )
+        anomaly_today = anomaly.detect_anomaly(
+            revlog_rows, config, today,
+            _parse_date(ds.get("last_anomaly_day")),
+        )
+
+        if anomaly_today:
+            streaks["anomaly_free_days"] = 0
+            ds["last_anomaly_day"] = today.isoformat()
+            pending.append(("anomaly", deck_id, deck_name, None))
+            continue
+
         streaks["anomaly_free_days"] = streaks.get("anomaly_free_days", 0) + 1
 
-    # ── Decision engine: рекомендация ──
-    # Вычисляем средний текущий лимит по отслеживаемым колодам
-    current_limits = [_get_deck_limit(did) for did in tracked_ids]
-    avg_limit = sum(current_limits) // max(len(current_limits), 1)
+        # Decision engine
+        current_limit = _get_deck_limit(deck_id)
+        decision, new_ema = decision_engine.decide(
+            metrics=deck_metrics,
+            config=config,
+            current_limit=current_limit,
+            last_change_day=_parse_date(ds.get("last_change_day")),
+            today=today,
+            prev_ema=ds.get("ema_state", {}),
+            anomaly_triggered_today=False,
+            stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
+            too_easy_streak_weeks=streaks.get("too_easy_days", 0) // 7,
+        )
+        ds["ema_state"] = new_ema
 
-    decision, new_ema = decision_engine.decide(
-        metrics=all_metrics,
-        config=config,
-        current_limit=avg_limit,
-        last_change_day=_parse_date(state.get("last_change_day")),
-        today=today,
-        prev_ema=state.get("ema_state", {}),
-        anomaly_triggered_today=False,
-        stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
-        too_easy_streak_weeks=streaks.get("too_easy_days", 0) // 7,
-    )
-    state["ema_state"] = new_ema
+        # Плановый визит
+        should_visit = _should_show_planned_visit(ds, config, today)
+        if should_visit:
+            ds["last_visit_day"] = today.isoformat()
+            pending.append(("planned", deck_id, deck_name, decision))
 
-    # ── Плановый визит ──
-    should_visit = _should_show_planned_visit(state, config, today)
-    if should_visit:
-        state["last_visit_day"] = today.isoformat()
-        _save_state(state)
-        _show_planned_visit_flow(decision, config, state, tracked_ids, today)
-    else:
-        _save_state(state)
+    _save_state(state)
+
+    # Показываем диалоги последовательно
+    if pending:
+        _show_dialog_queue(pending, 0, state, config, today)
 
 
 def _should_show_planned_visit(
-    state: Dict[str, Any], config: Dict[str, Any], today: datetime.date
+    ds: Dict[str, Any], config: Dict[str, Any], today: datetime.date
 ) -> bool:
-    """Проверяет, пора ли показать плановый визит."""
+    """Проверяет, пора ли показать плановый визит для конкретной колоды."""
     frequency = config.get("visit_frequency", "weekly")
     interval_days = FREQUENCY_DAYS.get(frequency, 7)
-    last_visit = _parse_date(state.get("last_visit_day"))
+    last_visit = _parse_date(ds.get("last_visit_day"))
     if last_visit is None:
-        return True  # первый запуск
+        return True
     return (today - last_visit).days >= interval_days
 
 
-# ── Диалоговые потоки ──────────────────────────────────────────────────────
+# ── Очередь диалогов ───────────────────────────────────────────────────────
+
+def _show_dialog_queue(
+    pending: List[Tuple[str, int, str, Any]],
+    index: int,
+    state: Dict[str, Any],
+    config: Dict[str, Any],
+    today: datetime.date,
+) -> None:
+    """Показывает следующий диалог из очереди (рекурсивно через колбэки)."""
+    if index >= len(pending):
+        return
+
+    item = pending[index]
+    dialog_type, deck_id, deck_name, extra = item
+
+    def on_done() -> None:
+        QTimer.singleShot(0, lambda: _show_dialog_queue(
+            pending, index + 1, state, config, today
+        ))
+
+    if dialog_type == "anomaly":
+        ds = _get_deck_state(state, deck_id)
+        _show_anomaly_flow(config, ds, deck_id, deck_name, today, on_done)
+    else:
+        ds = _get_deck_state(state, deck_id)
+        decision = extra
+        _show_planned_visit_flow(decision, config, ds, deck_id, deck_name, today, on_done)
+
+
+# ── Диалоговые потоки (per-deck) ───────────────────────────────────────────
 
 def _show_anomaly_flow(
     config: Dict[str, Any],
-    state: Dict[str, Any],
-    tracked_ids: List[int],
+    ds: Dict[str, Any],
+    deck_id: int,
+    deck_name: str,
     today: datetime.date,
+    on_done: Callable[[], None],
 ) -> None:
-    """Запускает цепочку anomaly-диалогов."""
+    """Запускает цепочку anomaly-диалогов для конкретной колоды."""
 
     def on_action(action: str) -> None:
         if action == "anomaly_lazy":
-            QTimer.singleShot(0, lambda: _show_lazy_flow(config, state, tracked_ids, today))
+            QTimer.singleShot(0, lambda: _show_lazy_flow(
+                config, ds, deck_id, deck_name, today, on_done
+            ))
         elif action == "anomaly_busy":
-            QTimer.singleShot(0, lambda: _show_busy_flow(config, state))
+            QTimer.singleShot(0, lambda: _show_busy_flow(config, ds, deck_name, on_done))
         elif action == "anomaly_dismiss":
-            pass  # просто закрыть
+            on_done()
 
-    mascot_ui.show_anomaly_checkin(on_action)
+    mascot_ui.show_anomaly_checkin(deck_name, on_action)
 
 
 def _show_lazy_flow(
     config: Dict[str, Any],
-    state: Dict[str, Any],
-    tracked_ids: List[int],
+    ds: Dict[str, Any],
+    deck_id: int,
+    deck_name: str,
     today: datetime.date,
+    on_done: Callable[[], None],
 ) -> None:
     """Диалог «Лень» → выбор длительности лёгкого режима."""
 
@@ -241,139 +313,139 @@ def _show_lazy_flow(
             try:
                 duration = int(days_str)
             except ValueError:
+                on_done()
                 return
             percent = float(config.get("light_mode_percent", 0.45))
-            # Сохраняем original_limit как средний по колодам
-            limits = [_get_deck_limit(did) for did in tracked_ids]
-            avg_limit = sum(limits) // max(len(limits), 1) if limits else 20
-            state["overrides"] = schedule_overrides.set_light_mode(
-                state["overrides"], today, duration, percent, avg_limit
+            current = _get_deck_limit(deck_id)
+            ds["overrides"] = schedule_overrides.set_light_mode(
+                ds["overrides"], today, duration, percent, current
             )
-            _save_state(state)
-            # Применяем лёгкий режим к каждой колоде
-            for did in tracked_ids:
-                current = _get_deck_limit(did)
-                new_limit = max(1, int(current * percent))
-                _set_deck_limit(did, new_limit)
-            tooltip(f"Anker: лёгкий режим на {duration} дн. включён.")
+            new_limit = max(1, int(current * percent))
+            _set_deck_limit(deck_id, new_limit)
+            tooltip(f"Anker: лёгкий режим для «{deck_name}» на {duration} дн.")
         elif action == "light_decline":
             pass
+        on_done()
 
-    mascot_ui.show_anomaly_lazy(on_action)
+    mascot_ui.show_anomaly_lazy(deck_name, on_action)
 
 
 def _show_busy_flow(
     config: Dict[str, Any],
-    state: Dict[str, Any],
+    ds: Dict[str, Any],
+    deck_name: str,
+    on_done: Callable[[], None],
 ) -> None:
     """Диалог «Занят(а)» → выбор дней недели."""
 
     def on_action(action: str) -> None:
         if action == "busy_setup_days":
-            QTimer.singleShot(
-                0,
-                lambda: _show_day_picker(state),
-            )
+            QTimer.singleShot(0, lambda: _show_day_picker(ds, deck_name, on_done))
         elif action == "busy_dismiss":
-            pass
+            on_done()
 
-    mascot_ui.show_anomaly_busy(on_action)
+    mascot_ui.show_anomaly_busy(deck_name, on_action)
 
 
-def _show_day_picker(state: Dict[str, Any]) -> None:
+def _show_day_picker(
+    ds: Dict[str, Any],
+    deck_name: str,
+    on_done: Callable[[], None],
+) -> None:
     """Диалог выбора дней недели для снижения нагрузки."""
-    current_rules = state.get("overrides", {}).get("day_of_week_rules", {})
+    current_rules = ds.get("overrides", {}).get("day_of_week_rules", {})
 
     def on_action(action: str) -> None:
         if action.startswith("day_rule_set:"):
             day = int(action.split(":")[1])
-            state["overrides"] = schedule_overrides.set_day_rule(
-                state["overrides"], day, 0.0
+            ds["overrides"] = schedule_overrides.set_day_rule(
+                ds["overrides"], day, 0.0
             )
         elif action.startswith("day_rule_remove:"):
             day = int(action.split(":")[1])
-            state["overrides"] = schedule_overrides.remove_day_rule(
-                state["overrides"], day
+            ds["overrides"] = schedule_overrides.remove_day_rule(
+                ds["overrides"], day
             )
-        _save_state(state)
+        # Не сохраняем здесь — сохранится в _daily_routine после всей цепочки
 
-    mascot_ui.show_day_of_week_picker(current_rules, on_action)
+    mascot_ui.show_day_of_week_picker(current_rules, deck_name, on_action, on_done)
 
 
 def _show_planned_visit_flow(
     decision: Any,
     config: Dict[str, Any],
-    state: Dict[str, Any],
-    tracked_ids: List[int],
+    ds: Dict[str, Any],
+    deck_id: int,
+    deck_name: str,
     today: datetime.date,
+    on_done: Callable[[], None],
 ) -> None:
     """Показывает плановый визит и применяет решение при согласии."""
 
     def on_action(action: str) -> None:
         if action == "increase_accept":
-            _apply_decision(decision, tracked_ids, state, today)
+            _apply_decision(decision, deck_id, ds, today)
         elif action == "decrease_accept":
-            _apply_decision(decision, tracked_ids, state, today)
-        # increase_decline, decrease_decline, prouded_ack, neutral_ack — ничего не делаем
+            _apply_decision(decision, deck_id, ds, today)
+        on_done()
 
-    mascot_ui.show_planned_visit(decision, on_action)
+    mascot_ui.show_planned_visit(decision, deck_name, on_action)
 
 
 def _apply_decision(
     decision: Any,
-    tracked_ids: List[int],
-    state: Dict[str, Any],
+    deck_id: int,
+    ds: Dict[str, Any],
     today: datetime.date,
 ) -> None:
-    """Применяет решение к каждой отслеживаемой колоде."""
-    new_limit = decision.new_limit
-    step = decision.step
+    """Применяет решение к одной конкретной колоде."""
     action = decision.action
+    step = decision.step
+    current = _get_deck_limit(deck_id)
 
-    for did in tracked_ids:
-        current = _get_deck_limit(did)
-        if action == "increase":
-            target = current + step
-        elif action == "decrease":
-            target = current - step
-        else:
-            continue
-        target = max(1, target)
-        _set_deck_limit(did, target)
+    if action == "increase":
+        target = current + step
+    elif action == "decrease":
+        target = current - step
+    else:
+        return
 
-    state["last_change_day"] = today.isoformat()
-    _save_state(state)
-    tooltip(f"Anker: лимит изменён ({action}), новый ≈ {new_limit}")
+    target = max(1, target)
+    _set_deck_limit(deck_id, target)
+    ds["last_change_day"] = today.isoformat()
+    tooltip(f"Anker: лимит изменён ({action}), новый ≈ {target}")
 
 
-# ── Применение override-правил при старте ───────────────────────────────────
+# ── Применение override-правил при старте (per-deck) ───────────────────────
 
 def _apply_overrides_on_startup() -> None:
     """
     При старте Anki применяет активные override-правила (лёгкий режим,
-    day-of-week) к отслеживаемым колодам. Это нужно, потому что между сессиями
-    Anki лимиты могли быть изменены вручную или сброшены.
+    day-of-week) к каждой отслеживаемой колоде отдельно.
     """
     today = datetime.date.today()
     state = _load_state()
     if not state:
         return
+    state = _migrate_state(state)
+
     config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
     if not tracked_ids:
         return
 
-    overrides = state.get("overrides", {})
-    # Срок действия лёгкого режима
-    overrides, _ = schedule_overrides.expire_light_mode_if_needed(overrides, today)
-    state["overrides"] = overrides
-    _save_state(state)
-
     for did in tracked_ids:
+        ds = _get_deck_state(state, did)
+        overrides = ds.get("overrides", {})
+        overrides, _ = schedule_overrides.expire_light_mode_if_needed(overrides, today)
+        ds["overrides"] = overrides
+
         base_limit = _get_deck_limit(did)
         effective = schedule_overrides.compute_effective_limit(overrides, base_limit, today)
         if effective != base_limit:
             _set_deck_limit(did, effective)
+
+    _save_state(state)
 
 
 # ── Меню ───────────────────────────────────────────────────────────────────
@@ -441,7 +513,7 @@ def _on_test_mascot() -> None:
     def on_action(action: str) -> None:
         tooltip(f"Anker test action: {action}")
 
-    mascot_ui.show_planned_visit(test_decision, on_action)
+    mascot_ui.show_planned_visit(test_decision, "Тестовая колода", on_action)
 
 
 def _on_force_analysis() -> None:
@@ -451,22 +523,15 @@ def _on_force_analysis() -> None:
 
 def _force_analysis() -> None:
     """
-    Выполняет полный расчётный путь (метрики → anomaly → decision_engine →
-    диалог) в обход visit_frequency и cooldown, но с сохранением проверки
+    Выполняет полный расчётный путь для каждой колоды отдельно,
+    в обход visit_frequency и cooldown, но с сохранением проверки
     min_history_days.
-
-    В отличие от _daily_routine():
-      - Не проверяет last_check_day (можно запускать многократно).
-      - Игнорирует cooldown_days (decision_engine) и anomaly_cooldown_days.
-      - Игнорирует visit_frequency — всегда показывает диалог, если применимо.
-      - НЕ сохраняет состояние (streaks, last_check_day и т.д.) — это тестовый
-        прогон, не влияющий на обычный цикл.
-      - Если min_history_days не выполнен — явно сообщает пользователю.
     """
     today = datetime.date.today()
     state = _load_state()
     if not state:
         state = _default_state()
+    state = _migrate_state(state)
 
     config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
@@ -475,61 +540,64 @@ def _force_analysis() -> None:
         tooltip("Anker: нет отслеживаемых колод. Сначала выберите колоды в меню Anker.")
         return
 
-    # Сбор метрик
-    all_metrics = metrics.collect_metrics(mw.col, tracked_ids, config, today)
+    pending: List[Tuple[str, int, str, Any]] = []
 
-    # Проверка min_history_days — явное сообщение, а не тишина
-    if not all_metrics.get("has_enough_history", False):
-        min_days = int(config.get("min_history_days", 7))
-        actual_days = all_metrics.get("history_days", 0)
-        showInfo(
-            f"Недостаточно истории: нужно минимум {min_days} дн. данных, "
-            f"сейчас {actual_days}. Anker пока не может дать рекомендацию.\n\n"
-            f"Совет: для быстрой проверки всех сценариев можно временно "
-            f"занизить min_history_days в конфиге аддона (например, до 1)."
+    for deck_id in tracked_ids:
+        try:
+            deck_name = mw.col.decks.name(deck_id)
+        except Exception:
+            deck_name = f"Колода #{deck_id}"
+
+        ds = _get_deck_state(state, deck_id)
+        deck_metrics = metrics.collect_metrics(mw.col, [deck_id], config, today)
+
+        if not deck_metrics.get("has_enough_history", False):
+            min_days = int(config.get("min_history_days", 7))
+            actual_days = deck_metrics.get("history_days", 0)
+            showInfo(
+                f"Колода «{deck_name}»: недостаточно истории — "
+                f"нужно минимум {min_days} дн., сейчас {actual_days}.\n\n"
+                f"Совет: для быстрой проверки можно временно занизить "
+                f"min_history_days в конфиге аддона (например, до 1)."
+            )
+            continue
+
+        streaks = ds.get("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
+        too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
+        ret_14d = deck_metrics.get("true_retention_14d")
+        too_easy_days = streaks.get("too_easy_days", 0)
+        if ret_14d is not None and ret_14d > too_easy_threshold:
+            too_easy_days += 1
+        else:
+            too_easy_days = 0
+
+        revlog_rows = metrics.fetch_revlog_rows(
+            mw.col, [deck_id], today - datetime.timedelta(days=14)
         )
-        return
+        anomaly_today = anomaly.detect_anomaly(
+            revlog_rows, config, today, None  # без cooldown
+        )
 
-    # Обновление streak-счётчиков (без сохранения в стейт — тестовый прогон)
-    streaks = state.get("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
-    too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
-    ret_14d = all_metrics.get("true_retention_14d")
-    too_easy_days = streaks.get("too_easy_days", 0)
-    if ret_14d is not None and ret_14d > too_easy_threshold:
-        too_easy_days += 1
-    else:
-        too_easy_days = 0
+        if anomaly_today:
+            pending.append(("anomaly", deck_id, deck_name, None))
+            continue
 
-    # Anomaly check-in: игнорируем cooldown (last_anomaly_day=None)
-    revlog_rows = metrics.fetch_revlog_rows(
-        mw.col, tracked_ids, today - datetime.timedelta(days=14)
-    )
-    anomaly_today = anomaly.detect_anomaly(
-        revlog_rows, config, today, None  # None = без cooldown
-    )
+        current_limit = _get_deck_limit(deck_id)
+        decision, _ = decision_engine.decide(
+            metrics=deck_metrics,
+            config=config,
+            current_limit=current_limit,
+            last_change_day=None,  # без cooldown
+            today=today,
+            prev_ema=ds.get("ema_state", {}),
+            anomaly_triggered_today=False,
+            stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
+            too_easy_streak_weeks=too_easy_days // 7,
+        )
+        pending.append(("planned", deck_id, deck_name, decision))
 
-    if anomaly_today:
-        _show_anomaly_flow(config, state, tracked_ids, today)
-        return
-
-    # Decision engine: игнорируем cooldown (last_change_day=None)
-    current_limits = [_get_deck_limit(did) for did in tracked_ids]
-    avg_limit = sum(current_limits) // max(len(current_limits), 1)
-
-    decision, _ = decision_engine.decide(
-        metrics=all_metrics,
-        config=config,
-        current_limit=avg_limit,
-        last_change_day=None,  # None = без cooldown
-        today=today,
-        prev_ema=state.get("ema_state", {}),
-        anomaly_triggered_today=False,
-        stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
-        too_easy_streak_weeks=too_easy_days // 7,
-    )
-
-    # Всегда показываем плановый визит (игнорируем visit_frequency)
-    _show_planned_visit_flow(decision, config, state, tracked_ids, today)
+    if pending:
+        _show_dialog_queue(pending, 0, state, config, today)
 
 
 def _on_reset_state() -> None:
@@ -556,8 +624,6 @@ def _on_main_window_init() -> None:
     """Вызывается при инициализации главного окна Anki."""
     _add_menu_item()
     _apply_overrides_on_startup()
-    # Запускаем ежедневную рутину с небольшой задержкой, чтобы коллекция
-    # точно была готова.
     QTimer.singleShot(2000, _daily_routine)
 
 

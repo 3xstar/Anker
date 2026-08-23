@@ -149,39 +149,27 @@ class MascotDialog(QDialog):
 
 def show_planned_visit(
     decision: Any,  # Decision из decision_engine
+    deck_name: str,
     on_action: Callable[[str], None],
 ) -> None:
     """
-    Показывает плановый визит маскота (раздел 5.2 ТЗ).
+    Показывает плановый визит маскота.
 
-    Выбор ветки привязан к decision.action (который уже учитывает cooldown,
-    историю и floor/ceiling), чтобы не предлагать изменение, которое всё равно
-    не применится:
-
-      - action == "increase" → enthusiastic.png (сценарий «слишком легко»)
-      - action == "decrease" → understanding.png (плавный тренд перегрузки)
+    Выбор ветки привязан к decision.action:
+      - action == "increase" → enthusiastic.png
+      - action == "decrease" → understanding.png
       - action == "hold" + is_stable_streak → prouded.png
       - action == "hold" иначе → neutral.png
-
-    Правило приоритета из раздела 4: enthusiastic при «слишком легко» имеет
-    приоритет над prouded — это уже заложено в action (increase > hold).
     """
     is_stable = decision.is_stable_streak
     is_too_easy = decision.is_too_easy
 
     if decision.action == "increase":
         image = IMG_ENTHUSIASTIC
-        if is_too_easy:
-            message = (
-                "Похоже, учёба идёт отлично! Ты стабильно всё запоминаешь, "
-                "и карточки даются очень легко. Может, попробуем увеличить "
-                "количество новых карточек в день?"
-            )
-        else:
-            message = (
-                "Ты справляешься лучше, чем нужно! Вижу, что нагрузку можно "
-                "немного увеличить. Попробуем добавить новых карточек?"
-            )
+        message = (
+            f"«{deck_name}» усваивается уверенно — "
+            f"можно немного ускориться и добавить новых карточек."
+        )
         buttons = [
             {"label": "Да, давай увеличим", "action": "increase_accept", "primary": True},
             {"label": "Пока оставим как есть", "action": "increase_decline"},
@@ -189,9 +177,8 @@ def show_planned_visit(
     elif decision.action == "decrease":
         image = IMG_UNDERSTANDING
         message = (
-            "Я заметил, что в последнее время тебе тяжеловато. "
-            "Давай немного снизим количество новых карточек, чтобы ты мог "
-            "восстановиться?"
+            f"Колоде «{deck_name}» в последнее время тяжело даются повторения. "
+            f"Есть смысл ненадолго снизить количество новых карточек."
         )
         buttons = [
             {"label": "Да, давай снизим", "action": "decrease_accept", "primary": True},
@@ -200,8 +187,8 @@ def show_planned_visit(
     elif is_stable:
         image = IMG_PROUDED
         message = (
-            "Я тобой горжусь! Уже больше двух недель ты держишь стабильный ритм "
-            "без единого срыва. Это впечатляет. Продолжай в том же духе!"
+            f"Всё стабильно с колодой «{deck_name}» — "
+            f"продолжаем в том же темпе."
         )
         buttons = [
             {"label": "Спасибо!", "action": "prouded_ack", "primary": True},
@@ -209,12 +196,11 @@ def show_planned_visit(
     else:
         image = IMG_NEUTRAL
         message = (
-            "Привет! Всё идёт своим чередом. "
-            "Нагрузка сейчас в норме — продолжаем без изменений. "
-            "Как ты себя чувствуешь?"
+            f"Всё стабильно с колодой «{deck_name}» — "
+            f"продолжаем в том же темпе."
         )
         buttons = [
-            {"label": "Нормально, продолжаем", "action": "neutral_ack", "primary": True},
+            {"label": "Хорошо", "action": "neutral_ack", "primary": True},
         ]
 
     dialog = MascotDialog(image, message, buttons, on_action)
@@ -222,16 +208,14 @@ def show_planned_visit(
 
 
 def show_anomaly_checkin(
+    deck_name: str,
     on_action: Callable[[str], None],
 ) -> None:
-    """
-    Показывает anomaly check-in диалог (раздел 5.1 ТЗ).
-    Изображение: worried.png.
-    """
+    """Показывает anomaly check-in диалог. Изображение: worried.png."""
     image = IMG_WORRIED
     message = (
-        "Сегодня тебе явно тяжелее, чем обычно. "
-        "Что случилось?"
+        f"Сегодня заметно тяжелее обычного с «{deck_name}». "
+        f"Что случилось?"
     )
     buttons = [
         {"label": "Лень / не хочется", "action": "anomaly_lazy"},
@@ -243,16 +227,14 @@ def show_anomaly_checkin(
 
 
 def show_anomaly_lazy(
+    deck_name: str,
     on_action: Callable[[str], None],
 ) -> None:
-    """
-    Реакция на «Лень / не хочется»: sad.png, предложение лёгкого режима.
-    """
+    """Реакция на «Лень / не хочется»: sad.png, предложение лёгкого режима."""
     image = IMG_SAD
     message = (
-        "Бывает. Ничего страшного — иногда всем нужно отдохнуть. "
-        "Давай включим временный лёгкий режим? "
-        "Я снижу количество новых карточек, а через несколько дней всё вернётся."
+        f"Бывает. Давай включим временный лёгкий режим для «{deck_name}»? "
+        f"Я снижу количество новых карточек, а через несколько дней всё вернётся."
     )
     buttons = [
         {"label": "Лёгкий режим на 3 дня", "action": "light_3d", "primary": True},
@@ -265,19 +247,17 @@ def show_anomaly_lazy(
 
 
 def show_anomaly_busy(
+    deck_name: str,
     on_action: Callable[[str], None],
 ) -> None:
-    """
-    Реакция на «Занят(а) сегодня»: understanding.png, выбор дней недели.
-    """
+    """Реакция на «Занят(а) сегодня»: understanding.png, выбор дней недели."""
     image = IMG_UNDERSTANDING
     message = (
-        "Понимаю, бывает. Хочешь настроить дни, в которые новые карточки "
-        "не будут добавляться? Выбери дни недели, и я запомню."
+        f"Понимаю. Хочешь настроить дни без новых карточек для «{deck_name}»?"
     )
     buttons = [
         {"label": "Настроить дни недели", "action": "busy_setup_days", "primary": True},
-        {"label": "Не сегодня, закроем", "action": "busy_dismiss"},
+        {"label": "Не сегодня", "action": "busy_dismiss"},
     ]
     dialog = MascotDialog(image, message, buttons, on_action)
     dialog.exec()
@@ -285,16 +265,15 @@ def show_anomaly_busy(
 
 def show_day_of_week_picker(
     current_rules: Dict[int, float],
+    deck_name: str,
     on_action: Callable[[str], None],
+    on_done: Callable[[], None],
 ) -> None:
     """
     Показывает диалог выбора дней недели для повторяющегося снижения нагрузки.
-    Использует neutral.png (нейтральный контекст настройки).
 
     current_rules: {weekday: multiplier, ...}, weekday 1=Пн..7=Вс.
-                   Ключи могут быть int или str (после JSON round-trip).
     """
-    # Нормализуем ключи: после JSON round-trip они становятся строками
     normalized_rules: Dict[int, float] = {}
     for k, v in current_rules.items():
         normalized_rules[int(k)] = v
@@ -302,7 +281,6 @@ def show_day_of_week_picker(
     image = IMG_NEUTRAL
     day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-    # Строим чекбоксы как HTML (внутри спич-бабла)
     checkboxes_html = ""
     for i, name in enumerate(day_names, 1):
         checked = "checked" if i in normalized_rules else ""
@@ -314,8 +292,7 @@ def show_day_of_week_picker(
         )
 
     message = (
-        "В какие дни недели снижать количество новых карточек? "
-        "Отметь нужные дни — в эти дни новые карточки добавляться не будут."
+        f"В какие дни недели снижать новые карточки для «{deck_name}»?"
     )
 
     colors = _get_theme_colors()
@@ -333,15 +310,11 @@ def show_day_of_week_picker(
     webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
-    # Собираем переключения дней.
-    # ВАЖНО: предзаполняем уже существующими правилами, чтобы при нажатии
-    # «Готово» без изменений ранее сохранённые дни не стёрлись.
     toggled_days: Dict[int, bool] = {day: True for day in normalized_rules}
 
     def handle_pycmd(cmd: str) -> None:
         nonlocal toggled_days
         if cmd.startswith("anker:day_toggle_"):
-            # формат: "anker:day_toggle_1:true"
             rest = cmd[len("anker:day_toggle_"):]
             parts = rest.split(":", 1)
             if len(parts) == 2:
@@ -349,15 +322,16 @@ def show_day_of_week_picker(
                 checked = parts[1] == "true"
                 toggled_days[day] = checked
         elif cmd == "anker:days_done":
-            # Передаём все выбранные дни
             for day in range(1, 8):
                 if toggled_days.get(day, False):
                     on_action(f"day_rule_set:{day}")
                 else:
                     on_action(f"day_rule_remove:{day}")
             dialog.accept()
+            on_done()
         elif cmd == "anker:days_cancel":
             dialog.reject()
+            on_done()
 
     webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
