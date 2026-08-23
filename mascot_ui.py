@@ -43,29 +43,19 @@ def _get_theme_colors() -> Dict[str, str]:
     Получает актуальные цвета текущей темы Anki (светлой/тёмной),
     чтобы диалог Anker визуально не выбивался из интерфейса.
 
-    Использует aqt.theme.theme_manager — официальный API Anki для
-    получения корректных цветов под текущую тему. При недоступности
-    (например, вне Anki) возвращает светлую палитру по умолчанию.
+    Использует QPalette — низкоуровневое Qt API, не зависящее от
+    специфичных для Anki именованных цветов, которые могут отличаться
+    между версиями. При недоступности возвращает светлую палитру.
     """
     try:
-        from aqt.theme import theme_manager
+        from aqt.qt import QPalette
+        palette = mw.app.palette()
+        bg = palette.color(QPalette.ColorRole.Window).name()
+        text = palette.color(QPalette.ColorRole.WindowText).name()
+        border = palette.color(QPalette.ColorRole.Mid).name()
+        frame_bg = palette.color(QPalette.ColorRole.Base).name()
 
-        bg = theme_manager.qcolor("window-bg").name()
-        text = theme_manager.qcolor("text-fg").name()
-        border = theme_manager.qcolor("border").name()
-
-        # frame-bg доступен не во всех версиях — fallback на canvas
-        try:
-            frame_bg = theme_manager.qcolor("frame-bg").name()
-        except Exception:
-            try:
-                frame_bg = theme_manager.qcolor("canvas").name()
-            except Exception:
-                frame_bg = bg
-
-        # Вычисляем hover/active как полупрозрачное наложение
-        # (работает и в светлой, и в тёмной теме)
-        return {
+        colors = {
             "bg": bg,
             "frame_bg": frame_bg,
             "text": text,
@@ -73,6 +63,19 @@ def _get_theme_colors() -> Dict[str, str]:
             "btn_hover": "rgba(128,128,128,0.15)",
             "btn_active": "rgba(128,128,128,0.25)",
         }
+
+        # DEBUG: выводим реальные цвета при первом открытии диалога,
+        # чтобы диагностировать расхождения на машине пользователя.
+        try:
+            from aqt.utils import tooltip
+            tooltip(
+                f"Anker theme: bg={bg} text={text} border={border} frame={frame_bg}",
+                period=3000,
+            )
+        except Exception:
+            pass
+
+        return colors
     except Exception:
         return dict(DEFAULT_THEME_COLORS)
 
