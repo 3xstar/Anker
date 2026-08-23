@@ -172,12 +172,43 @@ def test_stats_tabbed_main_tab():
     )
     assert "Главное" in html
     assert "Все показатели" in html
-    assert "Вспоминаемость карточек" in html
+    assert "Вспоминаемость" in html
     assert "78%" in html
     assert "data:image/png;base64," in html
 
 
-def test_stats_tabbed_all_tab():
+def test_stats_tabbed_main_tab_multiple_metrics():
+    """Вкладка «Главное» показывает несколько метрик, отсортированных по весу."""
+    metrics = make_test_metrics()
+    weights = {
+        "true_retention_14d": 0.10,
+        "true_retention_7d": 0.20,
+        "new_card_retention": 0.20,
+        "avg_difficulty": 0.05,
+        "avg_stability": 0.05,
+        "low_stability_ratio": 0.05,
+        "actual_vs_predicted": 0.05,
+        "avg_time_growth": 0.05,
+        "consistency": 0.03,
+        "relearning_stuck": 0.02,
+    }
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="main",
+        image_filename="neutral.png",
+        metric_weights=weights,
+    )
+    # Должно быть несколько stats-container блоков
+    assert html.count("stats-container") >= 2
+    assert "Вспоминаемость" in html
+    assert "Новые карточки" in html
+
+
+def test_stats_tabbed_all_tab_collapsible():
+    """Вкладка «Все показатели» содержит сворачиваемые строки."""
     metrics = make_test_metrics()
     html = hb.build_stats_tabbed_html(
         metrics=metrics,
@@ -187,6 +218,9 @@ def test_stats_tabbed_all_tab():
         active_tab="all",
         image_filename="prouded.png",
     )
+    assert "toggleMetricRow" in html
+    assert "metric-row-detail" in html
+    assert "onclick" in html
     assert "Все показатели" in html
     assert "Вспоминаемость (7 дн.)" in html
     assert "Вспоминаемость (14 дн.)" in html

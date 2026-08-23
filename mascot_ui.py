@@ -155,9 +155,16 @@ class MascotDialog(QDialog):
         self.webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.webview.set_bridge_command(self._handle_pycmd, self)
         self.webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
+        self.webview.page().loadFinished.connect(self._on_load_finished)
 
         self._show_main()
         layout.addWidget(self.webview)
+
+    def _on_load_finished(self, ok: bool) -> None:
+        """Измеряет высоту по завершении загрузки + контрольный замер."""
+        if ok:
+            self._resize_to_content()
+            QTimer.singleShot(150, self._resize_to_content)
 
     def _show_main(self) -> None:
         """Показывает основной экран диалога."""
@@ -165,7 +172,6 @@ class MascotDialog(QDialog):
             self._main_image, self._main_message, self._main_buttons, self._colors
         )
         self.webview.stdHtml(html)
-        QTimer.singleShot(150, self._resize_to_content)
 
     def _show_stats(self, tab: str = "main") -> None:
         """Показывает экран обоснования с вкладками «Главное» / «Все показатели»."""
@@ -196,9 +202,9 @@ class MascotDialog(QDialog):
             active_tab=tab,
             image_filename=image,
             theme_colors=self._colors,
+            metric_weights=ctx.get("metric_weights"),
         )
         self.webview.stdHtml(html)
-        QTimer.singleShot(150, self._resize_to_content)
 
     def _resize_to_content(self) -> None:
         """Измеряет реальную высоту контента и подгоняет размер окна."""
@@ -461,5 +467,5 @@ def show_day_of_week_picker(
     webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
     layout.addWidget(webview)
-    QTimer.singleShot(150, _resize_day_picker)
+    webview.page().loadFinished.connect(lambda ok: (_resize_day_picker(), QTimer.singleShot(150, _resize_day_picker)) if ok else None)
     dialog.exec()

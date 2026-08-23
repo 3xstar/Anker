@@ -148,6 +148,16 @@ def _daily_routine() -> None:
     config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
 
+    # Валидация: отфильтровываем несуществующие колоды
+    valid_ids = []
+    for did in tracked_ids:
+        if mw.col.decks.name_if_exists(did) is not None:
+            valid_ids.append(did)
+    if len(valid_ids) != len(tracked_ids):
+        config["tracked_deck_ids"] = valid_ids
+        mw.addonManager.writeConfig(__name__, config)
+    tracked_ids = valid_ids
+
     if not tracked_ids:
         return
 
@@ -161,10 +171,7 @@ def _daily_routine() -> None:
     pending: List[Tuple[str, int, str, Any, Any]] = []
 
     for deck_id in tracked_ids:
-        try:
-            deck_name = mw.col.decks.name(deck_id)
-        except Exception:
-            deck_name = f"Колода #{deck_id}"
+        deck_name = mw.col.decks.name_if_exists(deck_id) or f"Колода #{deck_id}"
 
         ds = _get_deck_state(state, deck_id)
 
@@ -289,6 +296,7 @@ def _show_anomaly_flow(
         "metrics": deck_metrics,
         "decision_action": "hold",
         "is_anomaly": True,
+        "metric_weights": config.get("metric_weights", {}),
     }
 
     def on_action(action: str) -> None:
@@ -395,6 +403,7 @@ def _show_planned_visit_flow(
         "decision_action": decision.action,
         "is_stable": decision.is_stable_streak,
         "is_anomaly": False,
+        "metric_weights": config.get("metric_weights", {}),
     }
 
     def on_action(action: str) -> None:
@@ -551,17 +560,27 @@ def _force_analysis() -> None:
     config = cfg.get_config(mw.addonManager, __name__)
     tracked_ids = list(config.get("tracked_deck_ids", []))
 
+    # Валидация: отфильтровываем несуществующие колоды
+    valid_ids = []
+    for did in tracked_ids:
+        if mw.col.decks.name_if_exists(did) is not None:
+            valid_ids.append(did)
+    if len(valid_ids) != len(tracked_ids):
+        config["tracked_deck_ids"] = valid_ids
+        mw.addonManager.writeConfig(__name__, config)
+    tracked_ids = valid_ids
+
     if not tracked_ids:
-        tooltip("Anker: нет отслеживаемых колод. Сначала выберите колоды в меню Anker.")
+        showInfo(
+            "Нет выбранной колоды. Выберите хотя бы одну колоду для теста "
+            "в настройках Anker: Anker → Выбрать колоды…"
+        )
         return
 
     pending: List[Tuple[str, int, str, Any, Any]] = []
 
     for deck_id in tracked_ids:
-        try:
-            deck_name = mw.col.decks.name(deck_id)
-        except Exception:
-            deck_name = f"Колода #{deck_id}"
+        deck_name = mw.col.decks.name_if_exists(deck_id) or f"Колода #{deck_id}"
 
         ds = _get_deck_state(state, deck_id)
         deck_metrics = metrics.collect_metrics(mw.col, [deck_id], config, today)
@@ -616,9 +635,15 @@ def _force_analysis() -> None:
 
 
 def _on_reset_state() -> None:
-    """Сбрасывает состояние аддона."""
+    """Сбрасывает состояние аддона и снимает выбор всех колод."""
     _save_state(_default_state())
-    tooltip("Anker: состояние сброшено.")
+    try:
+        config = mw.addonManager.getConfig(__name__) or {}
+        config["tracked_deck_ids"] = []
+        mw.addonManager.writeConfig(__name__, config)
+    except Exception:
+        pass
+    tooltip("Anker: состояние сброшено, выбор колод очищен.")
 
 
 # ── Вспомогательные ────────────────────────────────────────────────────────

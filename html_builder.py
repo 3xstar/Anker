@@ -550,12 +550,20 @@ __CSS__
   .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
     line-height:1.45; margin:8px 16px; }
   .all-metrics { text-align:left; max-height:280px; overflow-y:auto; }
+  .stats-note { font-size:11px; color:__TEXT_COLOR__; opacity:0.55;
+    padding:4px 0 8px 0; line-height:1.35; }
   .metric-row { display:flex; justify-content:space-between; align-items:center;
     padding:6px 0; border-bottom:1px solid __BORDER_COLOR__; }
   .metric-row-name { font-size:13px; color:__TEXT_COLOR__; }
   .metric-row-value { font-size:14px; font-weight:600; color:__TEXT_COLOR__; }
   .metric-row-desc { font-size:11px; color:__TEXT_COLOR__; opacity:0.6; }
-</style></head>
+  .metric-row { cursor:pointer; user-select:none; }
+  .metric-row-detail { display:none; padding-top:6px; }
+  .metric-row.expanded .metric-row-detail { display:block; }
+</style>
+<script>
+function toggleMetricRow(el) { el.classList.toggle('expanded'); }
+</script></head>
 <body>
   <div class="bubble-wrapper">
     <div class="bubble">
@@ -577,72 +585,123 @@ __CSS__
 </body></html>"""
 
 
+# ── Определения метрик для вкладки «Главное» ────────────────────────────────
+
+# (key, name, explain_fn, suffix, daily_series_key, color)
+_MAIN_METRIC_DEFS: List[tuple] = [
+    ("true_retention_14d", "Вспоминаемость", _retention_explanation, "%", "daily_retention_14d", "#0078d4"),
+    ("true_retention_7d", "Вспоминаемость (7 дн.)", _retention_explanation, "%", None, "#0078d4"),
+    ("new_card_retention", "Новые карточки", _new_card_retention_explanation, "%", None, "#107c10"),
+    ("avg_difficulty", "Средняя сложность", _difficulty_explanation, "", None, "#d13438"),
+    ("avg_stability", "Средняя стабильность", _stability_explanation, " дн.", None, "#0078d4"),
+    ("low_stability_ratio", "Доля нестабильных", _low_stability_explanation, "%", None, "#d13438"),
+    ("actual_vs_predicted", "Факт vs прогноз", _load_ratio_explanation, "", None, "#0078d4"),
+    ("avg_time_growth", "Время на карточку", _time_growth_explanation, "", None, "#d13438"),
+    ("consistency", "Регулярность", _consistency_explanation, "%", None, "#0078d4"),
+    ("relearning_stuck", "Застрявшие", _stuck_explanation, "", None, "#d13438"),
+]
+
+
+def _resolve_metric_value(metrics: Dict[str, Any], key: str) -> Optional[float]:
+    """Извлекает значение метрики, в т.ч. again_rate из button_ratio."""
+    if key in ("again_rate_young", "again_rate_mature"):
+        maturity = "young" if key == "again_rate_young" else "mature"
+        ratio_dict = metrics.get(f"button_ratio_{maturity}")
+        if ratio_dict and isinstance(ratio_dict, dict):
+            return ratio_dict.get("again")
+        return None
+    return metrics.get(key)
+
+
 def _build_main_tab_content(
     metrics: Dict[str, Any],
     decision_action: str,
     is_anomaly: bool,
+    metric_weights: Dict[str, float] | None = None,
 ) -> str:
-    """Собирает HTML для вкладки «Главное»."""
-    if decision_action == "decrease":
-        ret = metrics.get("true_retention_14d")
-        daily = metrics.get("daily_retention_14d", [])
-        metric_name = "Вспоминаемость карточек"
-        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-        sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
-        explanation = _retention_explanation(ret)
-    elif decision_action == "increase":
-        ret = metrics.get("true_retention_14d")
-        daily = metrics.get("daily_retention_14d", [])
-        metric_name = "Вспоминаемость карточек"
-        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-        sparkline = build_sparkline_svg(daily, color="#107c10") if daily else ""
-        explanation = _retention_explanation(ret)
-    elif is_anomaly:
-        again = None
-        daily = metrics.get("daily_again_rate_14d", [])
-        if daily:
-            today_data = daily[-1] if daily else None
-            again = today_data[1] if today_data else None
-        metric_name = "Доля ошибок (сегодня)"
-        metric_value = f"{int(again * 100)}%" if again is not None else "—"
-        sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
-        explanation = _again_rate_explanation(again)
-    else:
-        ret = metrics.get("true_retention_14d")
-        daily = metrics.get("daily_retention_14d", [])
-        metric_name = "Вспоминаемость карточек"
-        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-        sparkline = build_sparkline_svg(daily) if daily else ""
-        explanation = _retention_explanation(ret)
+    """
+    Собирает HTML для вкладки «Главное» — 3-5 самых значимых метрик,
+    отсортированных по весу из конфига.
+    """
+    if metric_weights is None:
+        metric_weights = {}
 
-    parts = [
-        '<div class="stats-container">',
-        f'<div class="metric-name">{metric_name}</div>',
-        f'<div class="metric-value">{metric_value}</div>',
-        sparkline,
-        f'<div class="metric-explanation">{explanation}</div>',
-        '</div>',
-    ]
-    return "\n".join(parts)
+    # Собираем доступные метрики с их весами
+    scored: List[tuple] = []
+    for key, name, explain_fn, suffix, daily_key, color in _MAIN_METRIC_DEFS:
+        value = _resolve_metric_value(metrics, key)
+        if value is None:
+            continue
+        weight = metric_weights.get(key, 0.0)
+        scored.append((weight, key, name, explain_fn, suffix, daily_key, color, value))
+
+    # При anomaly добавляем again_rate как приоритетную
+    if is_anomaly:
+        for maturity in ("young", "mature"):
+            ratio_dict = metrics.get(f"button_ratio_{maturity}")
+            if ratio_dict and isinstance(ratio_dict, dict):
+                again = ratio_dict.get("again")
+                if again is not None:
+                    weight = metric_weights.get(f"again_rate_{maturity}", 0.05) + 0.10  # бонус за anomaly
+                    scored.append((
+                        weight,
+                        f"again_rate_{maturity}",
+                        f"Доля ошибок ({'новые' if maturity == 'young' else 'зрелые'})",
+                        _again_rate_explanation,
+                        "%",
+                        "daily_again_rate_14d",
+                        "#d13438",
+                        again,
+                    ))
+
+    # Сортируем по весу, берём топ-5
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:5]
+
+    parts: List[str] = []
+    for _, key, name, explain_fn, suffix, daily_key, color, value in top:
+        if suffix == "%":
+            display = f"{int(value * 100)}%"
+        elif suffix == " дн.":
+            display = f"{value:.1f}{suffix}"
+        else:
+            display = f"{value:.1f}" if isinstance(value, float) else str(value)
+
+        daily = metrics.get(daily_key, []) if daily_key else []
+        sparkline = build_sparkline_svg(daily, color=color) if daily else ""
+        explanation = explain_fn(value)
+
+        parts.append('<div class="stats-container">')
+        parts.append(f'<div class="metric-name">{name}</div>')
+        parts.append(f'<div class="metric-value">{display}</div>')
+        if sparkline:
+            parts.append(sparkline)
+        parts.append(f'<div class="metric-explanation">{explanation}</div>')
+        parts.append('</div>')
+
+    return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-name">Нет данных</div></div>'
 
 
 def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
-        ("Вспоминаемость (7 дн.)", "true_retention_7d", _retention_explanation, "%"),
-        ("Вспоминаемость (14 дн.)", "true_retention_14d", _retention_explanation, "%"),
-        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%"),
-        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, ""),
-        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн."),
-        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%"),
-        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, ""),
-        ("Время на карточку", "avg_time_growth", _time_growth_explanation, ""),
-        ("Регулярность", "consistency", _consistency_explanation, "%"),
-        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, ""),
+        ("Вспоминаемость (7 дн.)", "true_retention_7d", _retention_explanation, "%", None),
+        ("Вспоминаемость (14 дн.)", "true_retention_14d", _retention_explanation, "%", "daily_retention_14d"),
+        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%", None),
+        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "", None),
+        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.", None),
+        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%", None),
+        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, "", None),
+        ("Время на карточку", "avg_time_growth", _time_growth_explanation, "", None),
+        ("Регулярность", "consistency", _consistency_explanation, "%", None),
+        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "", None),
     ]
 
-    parts = ['<div class="all-metrics">']
-    for name, key, explain_fn, suffix in rows_def:
+    parts = [
+        '<div class="stats-note">Показатели ниже — за последние 7–14 дней, а не за всё время. Поэтому они могут отличаться от общей статистики в Anki (Stats).</div>',
+        '<div class="all-metrics">',
+    ]
+    for name, key, explain_fn, suffix, daily_key in rows_def:
         value = metrics.get(key)
         if value is None:
             display = "—"
@@ -654,11 +713,24 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
             display = f"{value:.1f}" if isinstance(value, float) else str(value)
 
         desc = explain_fn(value)
+
+        # Sparkline для сворачиваемого блока
+        sparkline_html = ""
+        if daily_key:
+            daily = metrics.get(daily_key, [])
+            if daily:
+                sparkline_html = build_sparkline_svg(daily)
+
+        detail_html = ""
+        if sparkline_html:
+            detail_html = f'<div class="metric-row-detail">{sparkline_html}</div>'
+
         parts.append(
-            f'<div class="metric-row">'
+            f'<div class="metric-row" onclick="toggleMetricRow(this)">'
             f'<div><div class="metric-row-name">{name}</div>'
             f'<div class="metric-row-desc">{desc}</div></div>'
             f'<div class="metric-row-value">{display}</div>'
+            f'{detail_html}'
             f'</div>'
         )
     parts.append('</div>')
@@ -673,6 +745,7 @@ def build_stats_tabbed_html(
     active_tab: str,
     image_filename: str,
     theme_colors: Dict[str, str] | None = None,
+    metric_weights: Dict[str, float] | None = None,
 ) -> str:
     """
     Собирает HTML экрана обоснования с вкладками «Главное» и «Все показатели».
@@ -685,6 +758,7 @@ def build_stats_tabbed_html(
         active_tab: "main" или "all".
         image_filename: изображение маскота.
         theme_colors: цвета темы.
+        metric_weights: веса метрик из конфига для сортировки на вкладке «Главное».
     """
     if theme_colors is None:
         theme_colors = DEFAULT_THEME_COLORS
@@ -696,7 +770,7 @@ def build_stats_tabbed_html(
     if active_tab == "all":
         content = _build_all_tab_content(metrics)
     else:
-        content = _build_main_tab_content(metrics, decision_action, is_anomaly)
+        content = _build_main_tab_content(metrics, decision_action, is_anomaly, metric_weights)
 
     return (
         STATS_TABBED_TEMPLATE
