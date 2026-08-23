@@ -16,6 +16,7 @@ try:
     from aqt.qt import (
         QDialog,
         QHBoxLayout,
+        QLabel,
         QLineEdit,
         QListWidget,
         QListWidgetItem,
@@ -23,12 +24,13 @@ try:
         QVBoxLayout,
         Qt,
     )
+    from aqt.utils import tooltip
     _ANKI_AVAILABLE = True
 except ImportError:
     _ANKI_AVAILABLE = False
-    # Заглушки для импорта вне Anki (например, в тестах)
     QDialog = object
     QHBoxLayout = object
+    QLabel = object
     QLineEdit = object
     QListWidget = object
     QListWidgetItem = object
@@ -36,6 +38,7 @@ except ImportError:
     QVBoxLayout = object
     Qt = object
     mw = None
+    tooltip = None
 
 
 class DeckSelectorDialog(QDialog):
@@ -56,6 +59,19 @@ class DeckSelectorDialog(QDialog):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
+        # Предупреждение о двойном учёте (скрыто по умолчанию)
+        self.warning_label = QLabel(
+            "⚠ Некоторые колоды вложены друг в друга — "
+            "это приведёт к двойному учёту карточек. "
+            "Оставьте только родительскую колоду."
+        )
+        self.warning_label.setStyleSheet(
+            "color: #c75b00; font-size: 12px; padding: 4px 8px;"
+        )
+        self.warning_label.setWordWrap(True)
+        self.warning_label.hide()
+        layout.addWidget(self.warning_label)
+
         # Поле поиска
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Поиск колоды…")
@@ -74,7 +90,7 @@ class DeckSelectorDialog(QDialog):
         self.close_btn = QPushButton("Готово")
         self.select_all_btn.clicked.connect(self._select_all)
         self.select_none_btn.clicked.connect(self._select_none)
-        self.close_btn.clicked.connect(self.accept)
+        self.close_btn.clicked.connect(self._validate_and_accept)
         button_row.addWidget(self.select_all_btn)
         button_row.addWidget(self.select_none_btn)
         button_row.addStretch()
@@ -83,13 +99,25 @@ class DeckSelectorDialog(QDialog):
 
     def _load_decks(self) -> None:
         """Загружает все колоды и текущий выбор из конфига."""
-        # Получаем все колоды: mw.col.decks.all_names_and_ids()
         try:
             decks = mw.col.decks.all_names_and_ids()
         except Exception:
             decks = []
 
-        self._all_decks = [(d.id, d.name) for d in decks if d.name != "Default"]
+        # Фильтруем: только колоды, у которых есть карточки (включая подколоды)
+        non_empty = []
+        for d in decks:
+            if d.name == "Default":
+                continue
+            try:
+                count = mw.col.decks.card_count(d.id, include_subdecks=True)
+                if count > 0:
+                    non_empty.append((d.id, d.name))
+            except Exception:
+                # Если не можем проверить — показываем (лучше лишнее, чем потеря)
+                non_empty.append((d.id, d.name))
+
+        self._all_decks = non_empty
 
         # Текущий выбор из конфига аддона
         current = self._current_selected()
@@ -109,7 +137,6 @@ class DeckSelectorDialog(QDialog):
         """Перерисовывает список с учётом строки поиска."""
         query = self.search_edit.text().strip().lower()
 
-        # Блокируем сигнал itemChanged, чтобы не срабатывал при перерисовке
         self.deck_list.blockSignals(True)
         self.deck_list.clear()
         for did, name in self._all_decks:
@@ -124,6 +151,9 @@ class DeckSelectorDialog(QDialog):
             self.deck_list.addItem(item)
         self.deck_list.blockSignals(False)
 
+        # Проверяем на конфликт родитель-потомок
+        self._check_ancestor_conflict()
+
     def _on_item_changed(self, item: QListWidgetItem) -> None:
         """Обновляет множество выбранных при клике по чекбоксу."""
         did = item.data(Qt.ItemDataRole.UserRole)
@@ -131,6 +161,58 @@ class DeckSelectorDialog(QDialog):
             self._selected.add(did)
         else:
             self._selected.discard(did)
+        self._check_ancestor_conflict()
+
+    def _check_ancestor_conflict(self) -> None:
+        """
+        Проверяет, нет ли в выбранных колодах ситуации «родитель + потомок».
+        Если есть — показывает предупреждение.
+        """
+        selected = list(self._selected)
+        for i, did_a in enumerate(selected):
+            try:
+                children_a = set(mw.col.decks.deck_and_child_ids(did_a))
+            except Exception:
+                continue
+            for did_b in selected[i + 1:]:
+                if did_b in children_a:
+                    self.warning_label.show()
+                    return
+                try:
+                    children_b = set(mw.col.decks.deck_and_child_ids(did_b))
+                    if did_a in children_b:
+                        self.warning_label.show()
+                        return
+                except Exception:
+                    pass
+        self.warning_label.hide()
+
+    def _validate_and_accept(self) -> None:
+        """Проверяет на конфликты перед сохранением."""
+        selected = list(self._selected)
+        for i, did_a in enumerate(selected):
+            try:
+                children_a = set(mw.col.decks.deck_and_child_ids(did_a))
+            except Exception:
+                continue
+            for did_b in selected[i + 1:]:
+                if did_b in children_a:
+                    tooltip(
+                        "Нельзя выбрать родительскую и дочернюю колоду одновременно. "
+                        "Оставьте только родительскую."
+                    )
+                    return
+                try:
+                    children_b = set(mw.col.decks.deck_and_child_ids(did_b))
+                    if did_a in children_b:
+                        tooltip(
+                            "Нельзя выбрать родительскую и дочернюю колоду одновременно. "
+                            "Оставьте только родительскую."
+                        )
+                        return
+                except Exception:
+                    pass
+        self.accept()
 
     def _select_all(self) -> None:
         self._selected = {did for did, _ in self._all_decks}

@@ -119,6 +119,22 @@ def button_ratios(eases: Sequence[int]) -> Optional[Dict[str, float]]:
 
 # ── Чтение данных из базы Anki ─────────────────────────────────────────────
 
+def _expand_deck_ids(col, deck_ids: Sequence[int]) -> List[int]:
+    """
+    Разворачивает список ID колод, добавляя ID всех дочерних подколод.
+    Это нужно, потому что карточки в Anki привязаны к самой нижней подколоде,
+    и без агрегации метрики для родительской колоды будут пустыми.
+    """
+    result = set()
+    for did in deck_ids:
+        try:
+            children = col.decks.deck_and_child_ids(did)
+            result.update(children)
+        except Exception:
+            result.add(did)
+    return sorted(result)
+
+
 def fetch_revlog_rows(
     col,
     deck_ids: Sequence[int],
@@ -126,13 +142,14 @@ def fetch_revlog_rows(
     cutoff_hour: int = DEFAULT_DAY_CUTOFF_HOUR,
 ) -> List[Dict[str, Any]]:
     """
-    Возвращает строки revlog для карточек из заданных колод, начиная с
-    since_day (включительно). Строка содержит поля:
+    Возвращает строки revlog для карточек из заданных колод (включая подколоды),
+    начиная с since_day (включительно). Строка содержит поля:
     cid, ease, ivl, lastIvl, time (мс), type, day (datetime.date).
     """
     if not deck_ids:
         return []
-    placeholders = ",".join("?" for _ in deck_ids)
+    expanded = _expand_deck_ids(col, deck_ids)
+    placeholders = ",".join("?" for _ in expanded)
     # revlog.id — unix-время в мс. Считаем границу дня в мс на основе cutoff.
     start_dt = datetime.datetime.combine(
         since_day, datetime.time(hour=cutoff_hour, minute=0, second=0)
@@ -146,7 +163,7 @@ def fetch_revlog_rows(
         WHERE c.did IN ({placeholders})
           AND r.id >= ?
     """
-    rows = col.db.all(sql, *deck_ids, start_ms)
+    rows = col.db.all(sql, *expanded, start_ms)
     result = []
     for row in rows:
         rev_id, cid, ease, ivl, last_ivl, time_ms, rtype = row
@@ -168,17 +185,19 @@ def fetch_card_rows(
     col, deck_ids: Sequence[int]
 ) -> List[Dict[str, Any]]:
     """
-    Возвращает карточки из заданных колод: id, did, ivl (интервал), reps, lapses.
+    Возвращает карточки из заданных колод (включая подколоды):
+    id, did, ivl (интервал), reps, lapses.
     """
     if not deck_ids:
         return []
-    placeholders = ",".join("?" for _ in deck_ids)
+    expanded = _expand_deck_ids(col, deck_ids)
+    placeholders = ",".join("?" for _ in expanded)
     sql = f"""
         SELECT id, did, ivl, reps, lapses
         FROM cards
         WHERE did IN ({placeholders})
     """
-    rows = col.db.all(sql, *deck_ids)
+    rows = col.db.all(sql, *expanded)
     return [
         {"id": r[0], "did": r[1], "ivl": r[2], "reps": r[3], "lapses": r[4]}
         for r in rows
@@ -422,7 +441,8 @@ def _due_forecast_trend(col, deck_ids: Sequence[int]) -> Optional[float]:
     """
     if not deck_ids:
         return None
-    placeholders = ",".join("?" for _ in deck_ids)
+    expanded = _expand_deck_ids(col, deck_ids)
+    placeholders = ",".join("?" for _ in expanded)
     # Для каждого дня (0..6) считаем, сколько карточек станет due.
     # Упрощённо: карточки типа review/learn с due <= сегодня + день.
     try:
@@ -442,7 +462,7 @@ def _due_forecast_trend(col, deck_ids: Sequence[int]) -> Optional[float]:
         SELECT due, queue, type FROM cards WHERE did IN ({placeholders})
     """
     try:
-        rows = col.db.all(sql, *deck_ids)
+        rows = col.db.all(sql, *expanded)
     except Exception:
         return None
     for offset in range(7):
