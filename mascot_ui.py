@@ -28,6 +28,7 @@ try:
     from aqt import mw
     from aqt.qt import (
         QDialog,
+        QTimer,
         QVBoxLayout,
         Qt,
         QSizePolicy,
@@ -38,6 +39,7 @@ except ImportError:
     _ANKI_AVAILABLE = False
     # Заглушки для импорта вне Anki (например, в тестах)
     QDialog = object
+    QTimer = object
     QVBoxLayout = object
     Qt = object
     QSizePolicy = object
@@ -108,6 +110,9 @@ class MascotDialog(QDialog):
     Поддерживает кнопку «Почему?» — при нажатии заменяет содержимое
     на экран обоснования с метриками и графиком, без закрытия диалога.
     Кнопка «Назад» возвращает к основному сообщению.
+
+    Размер окна адаптируется под высоту контента (от 320 до 700 px),
+    окно центрируется относительно главного окна Anki.
     """
 
     def __init__(
@@ -138,7 +143,7 @@ class MascotDialog(QDialog):
         self._main_buttons = buttons
 
         self.setWindowTitle("Anker")
-        self.setFixedSize(460, 380)
+        self.setMinimumSize(460, 320)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setStyleSheet(f"QDialog {{ background-color: {self._colors['bg']}; }}")
 
@@ -159,6 +164,7 @@ class MascotDialog(QDialog):
             self._main_image, self._main_message, self._main_buttons, self._colors
         )
         self.webview.stdHtml(html)
+        QTimer.singleShot(150, self._resize_to_content)
 
     def _show_stats(self) -> None:
         """Показывает экран обоснования (кнопка «Почему?»)."""
@@ -168,7 +174,6 @@ class MascotDialog(QDialog):
 
         # Выбираем, какую метрику показать, в зависимости от причины решения
         if decision_action == "decrease":
-            # Перегрузка → показываем retention
             ret = metrics.get("true_retention_14d")
             daily = metrics.get("daily_retention_14d", [])
             metric_name = "Вспоминаемость карточек"
@@ -185,7 +190,6 @@ class MascotDialog(QDialog):
             explanation = _retention_explanation(ret)
             image = IMG_ENTHUSIASTIC
         elif ctx.get("is_anomaly"):
-            # Anomaly → показываем Again-rate
             again = None
             daily = metrics.get("daily_again_rate_14d", [])
             if daily:
@@ -197,7 +201,6 @@ class MascotDialog(QDialog):
             explanation = _again_rate_explanation(again)
             image = IMG_WORRIED
         else:
-            # Нейтрально / stable streak
             ret = metrics.get("true_retention_14d")
             daily = metrics.get("daily_retention_14d", [])
             metric_name = "Вспоминаемость карточек"
@@ -215,6 +218,32 @@ class MascotDialog(QDialog):
             theme_colors=self._colors,
         )
         self.webview.stdHtml(html)
+        QTimer.singleShot(150, self._resize_to_content)
+
+    def _resize_to_content(self) -> None:
+        """Измеряет реальную высоту контента и подгоняет размер окна."""
+        js = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        self.webview.page().runJavaScript(
+            js,
+            lambda h: self._apply_content_height(int(h) if h else 380),
+        )
+
+    def _apply_content_height(self, height: int) -> None:
+        """Применяет высоту окна с разумными пределами и центрирует."""
+        target = min(max(height + 40, 320), 700)
+        self.setFixedSize(460, target)
+        self._center_on_parent()
+
+    def _center_on_parent(self) -> None:
+        """Центрирует окно относительно главного окна Anki."""
+        if mw is not None:
+            try:
+                parent_geo = mw.geometry()
+                x = parent_geo.x() + (parent_geo.width() - self.width()) // 2
+                y = parent_geo.y() + (parent_geo.height() - self.height()) // 2
+                self.move(max(0, x), max(0, y))
+            except Exception:
+                pass
 
     def _handle_pycmd(self, cmd: str) -> None:
         """Обрабатывает pycmd-команды от кнопок."""
@@ -391,7 +420,7 @@ def show_day_of_week_picker(
 
     dialog = QDialog(mw)
     dialog.setWindowTitle("Anker — дни недели")
-    dialog.setFixedSize(460, 420)
+    dialog.setMinimumSize(460, 320)
     dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
     dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
     layout = QVBoxLayout(dialog)
@@ -402,6 +431,25 @@ def show_day_of_week_picker(
     webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
     toggled_days: Dict[int, bool] = {day: True for day in normalized_rules}
+
+    def _resize_day_picker() -> None:
+        js = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        webview.page().runJavaScript(
+            js,
+            lambda h: _apply_day_picker_height(int(h) if h else 420),
+        )
+
+    def _apply_day_picker_height(height: int) -> None:
+        target = min(max(height + 40, 320), 700)
+        dialog.setFixedSize(460, target)
+        if mw is not None:
+            try:
+                parent_geo = mw.geometry()
+                x = parent_geo.x() + (parent_geo.width() - dialog.width()) // 2
+                y = parent_geo.y() + (parent_geo.height() - dialog.height()) // 2
+                dialog.move(max(0, x), max(0, y))
+            except Exception:
+                pass
 
     def handle_pycmd(cmd: str) -> None:
         nonlocal toggled_days
@@ -427,4 +475,5 @@ def show_day_of_week_picker(
     webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
     layout.addWidget(webview)
+    QTimer.singleShot(150, _resize_day_picker)
     dialog.exec()

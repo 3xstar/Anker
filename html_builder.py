@@ -57,6 +57,8 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
+    min-height: 100vh;
     padding: 20px;
   }
 
@@ -137,19 +139,19 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     padding: 10px 14px;
     font-size: 14px;
     font-family: inherit;
-    color: __TEXT_COLOR__;
-    background: __FRAME_BG_COLOR__;
-    border: 2px solid __BORDER_COLOR__;
+    color: #1f1f23;
+    background: #ffffff;
+    border: 1px solid #c8c8ce;
     border-radius: 14px;
     cursor: pointer;
     text-align: center;
     transition: background 0.15s;
   }
   .btn:hover {
-    background: __BTN_HOVER_COLOR__;
+    background: #f2f2f4;
   }
   .btn:active {
-    background: __BTN_ACTIVE_COLOR__;
+    background: #e4e4e8;
   }
   .btn.primary {
     background: #0078d4;
