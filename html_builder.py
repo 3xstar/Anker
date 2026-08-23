@@ -20,7 +20,7 @@ html_builder.py — чистая генерация HTML для диалогов
 
 import base64
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 # ── Пути к изображениям ────────────────────────────────────────────────────
