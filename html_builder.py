@@ -451,27 +451,133 @@ def _difficulty_explanation(difficulty: Optional[float]) -> str:
     )
 
 
-# ── HTML-шаблон экрана обоснования ─────────────────────────────────────────
+# ── Шаблоны пояснений для всех метрик ──────────────────────────────────────
 
-STATS_TEMPLATE = """<!DOCTYPE html>
+def _stability_explanation(stability: Optional[float]) -> str:
+    if stability is None:
+        return "Недостаточно данных для оценки стабильности."
+    if stability < 3:
+        return "Стабильность ниже 3 дней — карточки быстро забываются, интервалы короткие."
+    if stability < 10:
+        return "Стабильность 3–10 дней — нормальный уровень, карточки закрепляются."
+    return "Стабильность выше 10 дней — отлично, интервалы между повторениями большие."
+
+
+def _due_trend_explanation(trend: Optional[float]) -> str:
+    if trend is None:
+        return "Недостаточно данных для прогноза нагрузки."
+    if trend > 5:
+        return "Прогноз нагрузки растёт — в ближайшие дни ожидается больше повторений."
+    if trend > 0:
+        return "Прогноз нагрузки слегка растёт."
+    if trend > -5:
+        return "Прогноз нагрузки стабилен или снижается."
+    return "Прогноз нагрузки заметно снижается — хороший знак."
+
+
+def _load_ratio_explanation(ratio: Optional[float]) -> str:
+    if ratio is None:
+        return "Недостаточно данных для сравнения нагрузки."
+    if ratio > 1.3:
+        return "Фактическая нагрузка заметно выше прогноза — лимит, возможно, завышен."
+    if ratio > 1.1:
+        return "Фактическая нагрузка немного выше прогноза."
+    if ratio > 0.9:
+        return "Фактическая нагрузка близка к прогнозу — всё в порядке."
+    return "Фактическая нагрузка ниже прогноза."
+
+
+def _time_growth_explanation(growth: Optional[float]) -> str:
+    if growth is None:
+        return "Недостаточно данных о времени ответа."
+    if growth > 1.3:
+        return "Время на карточку растёт — признак растущей когнитивной нагрузки."
+    if growth > 1.1:
+        return "Время на карточку немного выросло."
+    if growth > 0.9:
+        return "Время на карточку стабильно."
+    return "Время на карточку снижается — материал усваивается быстрее."
+
+
+def _consistency_explanation(consistency: Optional[float]) -> str:
+    if consistency is None:
+        return "Недостаточно данных о регулярности занятий."
+    if consistency < 0.3:
+        return "Регулярность низкая — занятия проходят нестабильно, это мешает закреплению."
+    if consistency < 0.6:
+        return "Регулярность средняя — есть пропуски, но в целом ритм держится."
+    return "Регулярность высокая — стабильный график занятий."
+
+
+def _stuck_explanation(stuck: Optional[float]) -> str:
+    if stuck is None:
+        return "Нет данных о застрявших карточках."
+    if stuck > 10:
+        return "Много карточек застряло в переучивании — стоит обратить на них внимание."
+    if stuck > 3:
+        return "Несколько карточек застряло в переучивании."
+    return "Застрявших карточек мало или нет."
+
+
+def _new_card_retention_explanation(ret: Optional[float]) -> str:
+    if ret is None:
+        return "Недостаточно данных по новым карточкам."
+    if ret < 0.50:
+        return "Новые карточки запоминаются тяжело — больше половины забывается."
+    if ret < 0.70:
+        return "Новые карточки усваиваются средне."
+    if ret < 0.85:
+        return "Новые карточки усваиваются хорошо."
+    return "Новые карточки усваиваются отлично."
+
+
+def _low_stability_explanation(ratio: Optional[float]) -> str:
+    if ratio is None:
+        return "Недостаточно данных о нестабильных карточках."
+    if ratio > 0.4:
+        return "Много карточек с низкой стабильностью — материал ещё не закрепился."
+    if ratio > 0.2:
+        return "Умеренная доля нестабильных карточек."
+    return "Мало нестабильных карточек — материал закрепляется хорошо."
+
+
+# ── HTML-шаблон экрана обоснования с вкладками ─────────────────────────────
+
+STATS_TABBED_TEMPLATE = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
 __CSS__
+  .tabs { display:flex; gap:0; margin-bottom:8px; }
+  .tab-btn {
+    flex:1; padding:8px 0; font-size:13px; font-family:inherit;
+    background:#ffffff; color:#1f1f23; border:1px solid #c8c8ce;
+    cursor:pointer; text-align:center; transition:background 0.15s;
+  }
+  .tab-btn:first-child { border-radius:10px 0 0 10px; }
+  .tab-btn:last-child { border-radius:0 10px 10px 0; }
+  .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
   .stats-container { text-align:center; padding:10px 0; }
   .metric-name { font-size:13px; color:__TEXT_COLOR__; opacity:0.7; margin-bottom:4px; }
   .metric-value { font-size:36px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:4px; }
   .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
     line-height:1.45; margin:8px 16px; }
+  .all-metrics { text-align:left; max-height:280px; overflow-y:auto; }
+  .metric-row { display:flex; justify-content:space-between; align-items:center;
+    padding:6px 0; border-bottom:1px solid __BORDER_COLOR__; }
+  .metric-row-name { font-size:13px; color:__TEXT_COLOR__; }
+  .metric-row-value { font-size:14px; font-weight:600; color:__TEXT_COLOR__; }
+  .metric-row-desc { font-size:11px; color:__TEXT_COLOR__; opacity:0.6; }
 </style></head>
 <body>
   <div class="bubble-wrapper">
     <div class="bubble">
-      <div class="stats-container">
-        <div class="metric-name">__METRIC_NAME__</div>
-        <div class="metric-value">__METRIC_VALUE__</div>
-        __SPARKLINE__
-        <div class="metric-explanation">__EXPLANATION__</div>
+      <div class="tabs">
+        <button class="tab-btn __TAB_MAIN_ACTIVE__"
+         onclick="pycmd('anker:stats_tab_main')">Главное</button>
+        <button class="tab-btn __TAB_ALL_ACTIVE__"
+         onclick="pycmd('anker:stats_tab_all')">Все показатели</button>
       </div>
+      __TAB_CONTENT__
     </div>
   </div>
   <div class="bottom-area">
@@ -483,35 +589,136 @@ __CSS__
 </body></html>"""
 
 
-def build_stats_html(
-    metric_name: str,
-    metric_value: str,
-    sparkline_svg: str,
-    explanation: str,
+def _build_main_tab_content(
+    metrics: Dict[str, Any],
+    decision_action: str,
+    is_anomaly: bool,
+) -> str:
+    """Собирает HTML для вкладки «Главное»."""
+    if decision_action == "decrease":
+        ret = metrics.get("true_retention_14d")
+        daily = metrics.get("daily_retention_14d", [])
+        metric_name = "Вспоминаемость карточек"
+        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+        sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
+        explanation = _retention_explanation(ret)
+    elif decision_action == "increase":
+        ret = metrics.get("true_retention_14d")
+        daily = metrics.get("daily_retention_14d", [])
+        metric_name = "Вспоминаемость карточек"
+        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+        sparkline = build_sparkline_svg(daily, color="#107c10") if daily else ""
+        explanation = _retention_explanation(ret)
+    elif is_anomaly:
+        again = None
+        daily = metrics.get("daily_again_rate_14d", [])
+        if daily:
+            today_data = daily[-1] if daily else None
+            again = today_data[1] if today_data else None
+        metric_name = "Доля ошибок (сегодня)"
+        metric_value = f"{int(again * 100)}%" if again is not None else "—"
+        sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
+        explanation = _again_rate_explanation(again)
+    else:
+        ret = metrics.get("true_retention_14d")
+        daily = metrics.get("daily_retention_14d", [])
+        metric_name = "Вспоминаемость карточек"
+        metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+        sparkline = build_sparkline_svg(daily) if daily else ""
+        explanation = _retention_explanation(ret)
+
+    parts = [
+        '<div class="stats-container">',
+        f'<div class="metric-name">{metric_name}</div>',
+        f'<div class="metric-value">{metric_value}</div>',
+        sparkline,
+        f'<div class="metric-explanation">{explanation}</div>',
+        '</div>',
+    ]
+    return "\n".join(parts)
+
+
+def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
+    """Собирает HTML для вкладки «Все показатели»."""
+    rows_def = [
+        ("Вспоминаемость (7 дн.)", "true_retention_7d", _retention_explanation, "%"),
+        ("Вспоминаемость (14 дн.)", "true_retention_14d", _retention_explanation, "%"),
+        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%"),
+        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, ""),
+        ("Медианная сложность", "median_difficulty", _difficulty_explanation, ""),
+        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн."),
+        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%"),
+        ("Прогноз нагрузки", "due_trend", _due_trend_explanation, ""),
+        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, ""),
+        ("Время на карточку", "avg_time_growth", _time_growth_explanation, ""),
+        ("Регулярность", "consistency", _consistency_explanation, "%"),
+        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, ""),
+    ]
+
+    parts = ['<div class="all-metrics">']
+    for name, key, explain_fn, suffix in rows_def:
+        value = metrics.get(key)
+        if value is None:
+            display = "—"
+        elif suffix == "%":
+            display = f"{int(value * 100)}%"
+        elif suffix == " дн.":
+            display = f"{value:.1f}{suffix}"
+        else:
+            display = f"{value:.1f}" if isinstance(value, float) else str(value)
+
+        desc = explain_fn(value)
+        parts.append(
+            f'<div class="metric-row">'
+            f'<div><div class="metric-row-name">{name}</div>'
+            f'<div class="metric-row-desc">{desc}</div></div>'
+            f'<div class="metric-row-value">{display}</div>'
+            f'</div>'
+        )
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
+def build_stats_tabbed_html(
+    metrics: Dict[str, Any],
+    decision_action: str,
+    is_anomaly: bool,
+    is_stable: bool,
+    active_tab: str,
     image_filename: str,
     theme_colors: Dict[str, str] | None = None,
 ) -> str:
     """
-    Собирает HTML экрана обоснования решения (кнопка «Почему?»).
+    Собирает HTML экрана обоснования с вкладками «Главное» и «Все показатели».
 
     Args:
-        metric_name: человекочитаемое название метрики.
-        metric_value: значение крупным шрифтом (например, "73%").
-        sparkline_svg: инлайновый SVG график тренда.
-        explanation: 1-2 предложения пояснения простыми словами.
-        image_filename: изображение маскота под характер данных.
+        metrics: словарь метрик из metrics.collect_metrics().
+        decision_action: "increase"/"decrease"/"hold".
+        is_anomaly: флаг anomaly-сценария.
+        is_stable: флаг стабильной серии.
+        active_tab: "main" или "all".
+        image_filename: изображение маскота.
         theme_colors: цвета темы.
     """
     if theme_colors is None:
         theme_colors = DEFAULT_THEME_COLORS
     css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
+
+    tab_main_active = "active" if active_tab == "main" else ""
+    tab_all_active = "active" if active_tab == "all" else ""
+
+    if active_tab == "all":
+        content = _build_all_tab_content(metrics)
+    else:
+        content = _build_main_tab_content(metrics, decision_action, is_anomaly)
+
     return (
-        STATS_TEMPLATE
+        STATS_TABBED_TEMPLATE
         .replace("__CSS__", css)
-        .replace("__METRIC_NAME__", metric_name)
-        .replace("__METRIC_VALUE__", metric_value)
-        .replace("__SPARKLINE__", sparkline_svg)
-        .replace("__EXPLANATION__", explanation)
+        .replace("__TAB_MAIN_ACTIVE__", tab_main_active)
+        .replace("__TAB_ALL_ACTIVE__", tab_all_active)
+        .replace("__TAB_CONTENT__", content)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__TEXT_COLOR__", theme_colors.get("text", DEFAULT_THEME_COLORS["text"]))
+        .replace("__BORDER_COLOR__", theme_colors.get("border", DEFAULT_THEME_COLORS["border"]))
     )

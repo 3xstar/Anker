@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List
 from .html_builder import (
     build_dialog_html,
     build_day_picker_html,
-    build_stats_html,
+    build_stats_tabbed_html,
     build_sparkline_svg,
     DEFAULT_THEME_COLORS,
     _retention_explanation,
@@ -141,6 +141,7 @@ class MascotDialog(QDialog):
         self._main_image = image_filename
         self._main_message = message
         self._main_buttons = buttons
+        self._active_stats_tab = "main"  # "main" или "all"
 
         self.setWindowTitle("Anker")
         self.setMinimumSize(460, 320)
@@ -166,54 +167,33 @@ class MascotDialog(QDialog):
         self.webview.stdHtml(html)
         QTimer.singleShot(150, self._resize_to_content)
 
-    def _show_stats(self) -> None:
-        """Показывает экран обоснования (кнопка «Почему?»)."""
+    def _show_stats(self, tab: str = "main") -> None:
+        """Показывает экран обоснования с вкладками «Главное» / «Все показатели»."""
+        self._active_stats_tab = tab
         ctx = self._stats_context or {}
         metrics = ctx.get("metrics", {})
         decision_action = ctx.get("decision_action", "hold")
+        is_anomaly = ctx.get("is_anomaly", False)
+        is_stable = ctx.get("is_stable", False)
 
-        # Выбираем, какую метрику показать, в зависимости от причины решения
+        # Выбираем изображение под характер данных
         if decision_action == "decrease":
-            ret = metrics.get("true_retention_14d")
-            daily = metrics.get("daily_retention_14d", [])
-            metric_name = "Вспоминаемость карточек"
-            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-            sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
-            explanation = _retention_explanation(ret)
             image = IMG_SAD
         elif decision_action == "increase":
-            ret = metrics.get("true_retention_14d")
-            daily = metrics.get("daily_retention_14d", [])
-            metric_name = "Вспоминаемость карточек"
-            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-            sparkline = build_sparkline_svg(daily, color="#107c10") if daily else ""
-            explanation = _retention_explanation(ret)
             image = IMG_ENTHUSIASTIC
-        elif ctx.get("is_anomaly"):
-            again = None
-            daily = metrics.get("daily_again_rate_14d", [])
-            if daily:
-                today_data = daily[-1] if daily else None
-                again = today_data[1] if today_data else None
-            metric_name = "Доля ошибок (сегодня)"
-            metric_value = f"{int(again * 100)}%" if again is not None else "—"
-            sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
-            explanation = _again_rate_explanation(again)
+        elif is_anomaly:
             image = IMG_WORRIED
+        elif is_stable:
+            image = IMG_PROUDED
         else:
-            ret = metrics.get("true_retention_14d")
-            daily = metrics.get("daily_retention_14d", [])
-            metric_name = "Вспоминаемость карточек"
-            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
-            sparkline = build_sparkline_svg(daily) if daily else ""
-            explanation = _retention_explanation(ret)
-            image = IMG_PROUDED if ctx.get("is_stable") else IMG_NEUTRAL
+            image = IMG_NEUTRAL
 
-        html = build_stats_html(
-            metric_name=metric_name,
-            metric_value=metric_value,
-            sparkline_svg=sparkline,
-            explanation=explanation,
+        html = build_stats_tabbed_html(
+            metrics=metrics,
+            decision_action=decision_action,
+            is_anomaly=is_anomaly,
+            is_stable=is_stable,
+            active_tab=tab,
             image_filename=image,
             theme_colors=self._colors,
         )
@@ -250,7 +230,13 @@ class MascotDialog(QDialog):
         if cmd.startswith("anker:"):
             action = cmd[len("anker:"):]
             if action == "why":
-                self._show_stats()
+                self._show_stats("main")
+                return
+            if action == "stats_tab_main":
+                self._show_stats("main")
+                return
+            if action == "stats_tab_all":
+                self._show_stats("all")
                 return
             if action == "stats_back":
                 self._show_main()

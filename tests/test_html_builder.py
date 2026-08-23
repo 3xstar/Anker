@@ -138,3 +138,188 @@ def test_day_picker_html_uses_anki_palette():
     assert "#e8dcc8" not in html
     assert "#f5f5f7" in html
     assert "#0078d4" in html
+
+
+# ── Тесты: build_stats_tabbed_html ─────────────────────────────────────────
+
+def make_test_metrics():
+    """Создаёт словарь метрик для тестов."""
+    return {
+        "true_retention_7d": 0.82,
+        "true_retention_14d": 0.78,
+        "new_card_retention": 0.75,
+        "avg_difficulty": 5.5,
+        "median_difficulty": 5.2,
+        "avg_stability": 8.0,
+        "low_stability_ratio": 0.18,
+        "due_trend": 2.0,
+        "actual_vs_predicted": 1.1,
+        "avg_time_growth": 1.05,
+        "consistency": 0.65,
+        "relearning_stuck": 4,
+        "daily_retention_14d": [("15.08", 0.80), ("16.08", 0.78)],
+        "daily_again_rate_14d": [("15.08", 0.10), ("16.08", 0.12)],
+    }
+
+
+def test_stats_tabbed_main_tab():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="decrease",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="main",
+        image_filename="neutral.png",
+    )
+    assert "Главное" in html
+    assert "Все показатели" in html
+    assert "Вспоминаемость карточек" in html
+    assert "78%" in html
+    assert "data:image/png;base64," in html
+
+
+def test_stats_tabbed_all_tab():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=True,
+        active_tab="all",
+        image_filename="prouded.png",
+    )
+    assert "Все показатели" in html
+    assert "Вспоминаемость (7 дн.)" in html
+    assert "Вспоминаемость (14 дн.)" in html
+    assert "Новые карточки" in html
+    assert "Средняя сложность" in html
+    assert "Регулярность" in html
+    assert "Застрявшие карточки" in html
+    assert "82%" in html
+    assert "78%" in html
+
+
+def test_stats_tabbed_active_class():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="main",
+        image_filename="neutral.png",
+    )
+    assert 'tab-btn active' in html
+    # На вкладке "Все показатели" не должно быть active
+    assert html.count('tab-btn active') == 1
+
+
+def test_stats_tabbed_all_tab_active_class():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="all",
+        image_filename="neutral.png",
+    )
+    assert 'tab-btn active' in html
+
+
+def test_stats_tabbed_anomaly_shows_again_rate():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=True,
+        is_stable=False,
+        active_tab="main",
+        image_filename="worried.png",
+    )
+    assert "Доля ошибок" in html
+
+
+def test_stats_tabbed_no_placeholder_markers():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="main",
+        image_filename="neutral.png",
+    )
+    assert "__CSS__" not in html
+    assert "__TAB_MAIN_ACTIVE__" not in html
+    assert "__TAB_ALL_ACTIVE__" not in html
+    assert "__TAB_CONTENT__" not in html
+    assert "__IMAGE_URL__" not in html
+
+
+# ── Тесты: функции пояснений ───────────────────────────────────────────────
+
+def test_retention_explanation_ranges():
+    assert "ниже 50%" in hb._retention_explanation(0.30)
+    assert "50–70%" in hb._retention_explanation(0.60)
+    assert "70–85%" in hb._retention_explanation(0.80)
+    assert "выше 85%" in hb._retention_explanation(0.92)
+    assert "Недостаточно" in hb._retention_explanation(None)
+
+
+def test_again_rate_explanation_ranges():
+    assert "выше 25%" in hb._again_rate_explanation(0.30)
+    assert "15–25%" in hb._again_rate_explanation(0.20)
+    assert "8–15%" in hb._again_rate_explanation(0.10)
+    assert "ниже 8%" in hb._again_rate_explanation(0.05)
+    assert "Недостаточно" in hb._again_rate_explanation(None)
+
+
+def test_difficulty_explanation_ranges():
+    assert "выше 7" in hb._difficulty_explanation(8.0)
+    assert "5–7" in hb._difficulty_explanation(6.0)
+    assert "ниже 5" in hb._difficulty_explanation(3.0)
+    assert "Недостаточно" in hb._difficulty_explanation(None)
+
+
+def test_stability_explanation_ranges():
+    assert "ниже 3" in hb._stability_explanation(2.0)
+    assert "3–10" in hb._stability_explanation(5.0)
+    assert "выше 10" in hb._stability_explanation(15.0)
+    assert "Недостаточно" in hb._stability_explanation(None)
+
+
+def test_consistency_explanation_ranges():
+    assert "низкая" in hb._consistency_explanation(0.2)
+    assert "средняя" in hb._consistency_explanation(0.5)
+    assert "высокая" in hb._consistency_explanation(0.8)
+    assert "Недостаточно" in hb._consistency_explanation(None)
+
+
+def test_new_card_retention_explanation_ranges():
+    assert "тяжело" in hb._new_card_retention_explanation(0.40)
+    assert "средне" in hb._new_card_retention_explanation(0.60)
+    assert "хорошо" in hb._new_card_retention_explanation(0.80)
+    assert "отлично" in hb._new_card_retention_explanation(0.95)
+    assert "Недостаточно" in hb._new_card_retention_explanation(None)
+
+
+# ── Тесты: sparkline ───────────────────────────────────────────────────────
+
+def test_sparkline_empty_on_insufficient_data():
+    svg = hb.build_sparkline_svg([("01.01", None), ("02.01", None)])
+    assert svg == ""
+
+
+def test_sparkline_generates_svg():
+    data = [("15.08", 0.80), ("16.08", 0.78), ("17.08", 0.85)]
+    svg = hb.build_sparkline_svg(data)
+    assert "<svg" in svg
+    assert "<polyline" in svg
+    assert "<circle" in svg
+
+
+def test_sparkline_single_point_returns_empty():
+    svg = hb.build_sparkline_svg([("15.08", 0.80)])
+    assert svg == ""
