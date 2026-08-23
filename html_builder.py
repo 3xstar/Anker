@@ -463,18 +463,6 @@ def _stability_explanation(stability: Optional[float]) -> str:
     return "Стабильность выше 10 дней — отлично, интервалы между повторениями большие."
 
 
-def _due_trend_explanation(trend: Optional[float]) -> str:
-    if trend is None:
-        return "Недостаточно данных для прогноза нагрузки."
-    if trend > 5:
-        return "Прогноз нагрузки растёт — в ближайшие дни ожидается больше повторений."
-    if trend > 0:
-        return "Прогноз нагрузки слегка растёт."
-    if trend > -5:
-        return "Прогноз нагрузки стабилен или снижается."
-    return "Прогноз нагрузки заметно снижается — хороший знак."
-
-
 def _load_ratio_explanation(ratio: Optional[float]) -> str:
     if ratio is None:
         return "Недостаточно данных для сравнения нагрузки."
@@ -645,10 +633,8 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
         ("Вспоминаемость (14 дн.)", "true_retention_14d", _retention_explanation, "%"),
         ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%"),
         ("Средняя сложность", "avg_difficulty", _difficulty_explanation, ""),
-        ("Медианная сложность", "median_difficulty", _difficulty_explanation, ""),
         ("Средняя стабильность", "avg_stability", _stability_explanation, " дн."),
         ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%"),
-        ("Прогноз нагрузки", "due_trend", _due_trend_explanation, ""),
         ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, ""),
         ("Время на карточку", "avg_time_growth", _time_growth_explanation, ""),
         ("Регулярность", "consistency", _consistency_explanation, "%"),

@@ -90,17 +90,13 @@ def normalize_signal(key: str, value: Optional[float]) -> float:
         # Again-rate: 0.10 (10%) — нейтрально, 0% → +1, 30% → -1.
         return _clip((0.10 - value) / 0.20)
 
-    if key in ("avg_difficulty", "median_difficulty"):
+    if key == "avg_difficulty":
         # FSRS difficulty ∈ [1, 10]. 5.0 — нейтрально, 1 → +1, 9 → -1.
         return _clip((5.0 - value) / 4.0)
 
     if key == "low_stability_ratio":
         # Доля карточек со стабильностью < 1 дня. 0.2 — нейтрально.
         return _clip((0.2 - value) / 0.2)
-
-    if key == "due_trend":
-        # Наклон due-прогноза (карточек/день). 0 — нейтрально.
-        return _clip(-value / 10.0)
 
     if key == "actual_vs_predicted":
         # Отношение факт/прогноз. 1.0 — нейтрально.
@@ -134,10 +130,8 @@ def extract_signals(metrics: Dict[str, Any]) -> Dict[str, Optional[float]]:
         "true_retention_14d",
         "new_card_retention",
         "avg_difficulty",
-        "median_difficulty",
         "avg_stability",
         "low_stability_ratio",
-        "due_trend",
         "actual_vs_predicted",
         "avg_time_growth",
         "consistency",

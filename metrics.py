@@ -208,32 +208,32 @@ def fetch_fsrs_memory_state(
     col, card_ids: Sequence[int]
 ) -> Dict[int, Tuple[float, Optional[float]]]:
     """
-    Пытается получить FSRS-состояние (difficulty, stability) для карточек.
+    Получает FSRS-состояние (difficulty, stability) через card.memory_state.
 
-    Возвращает словарь {card_id: (difficulty, stability)}. Если FSRS недоступен
-    (SM-2 планировщик, либо старая версия Anki без card_stats_data), возвращает
-    пустой словарь — это graceful fallback, метрики сложности/стабильности
-    тогда будут None и decision_engine их пропустит.
+    card.memory_state — стандартное поле объекта Card в Anki с FSRS.
+    Если карточка не изучалась через FSRS (SM-2) — memory_state будет None,
+    это ожидаемо и обрабатывается graceful.
+
+    Возвращает словарь {card_id: (difficulty, stability)}.
+    Если FSRS недоступен или данных нет — возвращает пустой словарь.
     """
     result: Dict[int, Tuple[float, Optional[float]]] = {}
     if not card_ids:
         return result
-    card_stats_data = getattr(col, "card_stats_data", None)
-    if card_stats_data is None:
-        return result  # старая версия Anki без FSRS-статистики
     for cid in card_ids:
         try:
-            stats = card_stats_data(cid)
+            card = col.get_card(cid)
         except Exception:
             continue
-        difficulty = getattr(stats, "fsrs_difficulty", None)
-        if difficulty is None:
+        state = getattr(card, "memory_state", None)
+        if state is None:
             continue
-        stability = getattr(stats, "fsrs_stability", None)
-        result[cid] = (
-            float(difficulty),
-            float(stability) if stability is not None else None,
-        )
+        try:
+            difficulty = float(state.difficulty)
+            stability = float(state.stability) if state.stability is not None else None
+            result[cid] = (difficulty, stability)
+        except Exception:
+            continue
     return result
 
 
@@ -277,10 +277,8 @@ def collect_metrics(
         "button_ratio_young": None,
         "button_ratio_mature": None,
         "avg_difficulty": None,
-        "median_difficulty": None,
         "avg_stability": None,
         "low_stability_ratio": None,
-        "due_trend": None,
         "actual_vs_predicted": None,
         "avg_time_per_card_7d": None,
         "avg_time_growth": None,
@@ -313,16 +311,12 @@ def collect_metrics(
         stabilities = [s for _, s in fsrs.values() if s is not None]
         if difficulties:
             metrics["avg_difficulty"] = sum(difficulties) / len(difficulties)
-            metrics["median_difficulty"] = median(difficulties)
         if stabilities:
             metrics["avg_stability"] = sum(stabilities) / len(stabilities)
             low_count = sum(1 for s in stabilities if s < LOW_STABILITY_DAYS)
             metrics["low_stability_ratio"] = low_count / len(stabilities)
 
-    # 6. Тренд прогноза повторений (due-пул на 7 дней вперёд, линейная регрессия)
-    metrics["due_trend"] = _due_forecast_trend(col, deck_ids)
-
-    # 7. Фактическая нагрузка vs теоретическая (рост числа повторений за неделю)
+    # 6. Фактическая нагрузка vs теоретическая (рост числа повторений за неделю)
     metrics["actual_vs_predicted"] = _actual_vs_predicted(revlog, today)
 
     # 8. Время на карточку (среднее за 7 дней и рост к предыдущим 7 дням)
@@ -437,50 +431,6 @@ def _button_ratio_by_maturity(
         if is_mature == mature:
             eases.append(r["ease"])
     return button_ratios(eases)
-
-
-def _due_forecast_trend(col, deck_ids: Sequence[int]) -> Optional[float]:
-    """
-    Тренд прогноза повторений: линейная регрессия по количеству due-карточек
-    на каждый из следующих 7 дней. Наклон > 0 означает растущий пул due
-    (потенциальная перегрузка), < 0 — падающий.
-    """
-    if not deck_ids:
-        return None
-    expanded = _expand_deck_ids(col, deck_ids)
-    placeholders = ",".join("?" for _ in expanded)
-    # Для каждого дня (0..6) считаем, сколько карточек станет due.
-    # Упрощённо: карточки типа review/learn с due <= сегодня + день.
-    try:
-        today_due = col.db.scalar(
-            "SELECT CAST(days_since_epoch AS INTEGER) FROM config LIMIT 1"
-        )
-    except Exception:
-        today_due = None
-    if today_due is None:
-        # fallback: используем колонку due карточек без точной даты
-        return None
-    # days_since_epoch лежит в config (в ms). Приводим к дням.
-    today = today_due
-    xs: List[float] = []
-    ys: List[float] = []
-    sql = f"""
-        SELECT due, queue, type FROM cards WHERE did IN ({placeholders})
-    """
-    try:
-        rows = col.db.all(sql, *expanded)
-    except Exception:
-        return None
-    for offset in range(7):
-        count = 0
-        for due, queue, ctype in rows:
-            # due-карточки — те, у которых due <= today + offset
-            # (упрощённая модель без учёта learning steps и FSRS)
-            if queue >= 0 and due <= today + offset:
-                count += 1
-        xs.append(float(offset))
-        ys.append(float(count))
-    return linear_regression_slope(xs, ys)
 
 
 def _actual_vs_predicted(

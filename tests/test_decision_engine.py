@@ -29,10 +29,8 @@ def make_metrics(**overrides):
         "button_ratio_young": {"again": 0.10, "hard": 0.30, "good": 0.50, "easy": 0.10},
         "button_ratio_mature": {"again": 0.08, "hard": 0.25, "good": 0.55, "easy": 0.12},
         "avg_difficulty": 5.0,
-        "median_difficulty": 4.8,
         "avg_stability": 8.0,
         "low_stability_ratio": 0.15,
-        "due_trend": 0.5,
         "actual_vs_predicted": 1.05,
         "avg_time_growth": 1.02,
         "consistency": 0.65,
@@ -91,12 +89,6 @@ def test_normalize_difficulty():
     assert de.normalize_signal("avg_difficulty", 5.0) == 0.0
     assert de.normalize_signal("avg_difficulty", 1.0) == 1.0
     assert de.normalize_signal("avg_difficulty", 9.0) == -1.0
-
-
-def test_normalize_due_trend():
-    assert de.normalize_signal("due_trend", 0.0) == 0.0
-    assert de.normalize_signal("due_trend", 10.0) == -1.0
-    assert de.normalize_signal("due_trend", -10.0) == 1.0
 
 
 def test_normalize_actual_vs_predicted():
@@ -166,7 +158,6 @@ def test_load_score_overloaded():
         button_ratio_mature={"again": 0.30, "hard": 0.30, "good": 0.35, "easy": 0.05},
         avg_difficulty=7.5,
         low_stability_ratio=0.45,
-        due_trend=8.0,
         actual_vs_predicted=1.6,
         avg_time_growth=1.5,
         consistency=0.2,
@@ -188,7 +179,6 @@ def test_load_score_underloaded():
         button_ratio_mature={"again": 0.02, "hard": 0.18, "good": 0.60, "easy": 0.20},
         avg_difficulty=3.0,
         low_stability_ratio=0.05,
-        due_trend=-3.0,
         actual_vs_predicted=0.7,
         avg_time_growth=0.9,
         consistency=0.85,
@@ -204,7 +194,6 @@ def test_load_score_missing_metrics():
     """При отсутствии FSRS-метрик (SM-2) Load Score всё равно вычисляется."""
     metrics = make_metrics(
         avg_difficulty=None,
-        median_difficulty=None,
         avg_stability=None,
         low_stability_ratio=None,
     )
@@ -255,7 +244,6 @@ def test_decide_increase():
         button_ratio_mature={"again": 0.01, "hard": 0.15, "good": 0.60, "easy": 0.24},
         avg_difficulty=2.5,
         low_stability_ratio=0.03,
-        due_trend=-5.0,
         actual_vs_predicted=0.6,
         avg_time_growth=0.85,
         consistency=0.9,
@@ -277,7 +265,6 @@ def test_decide_decrease():
         button_ratio_mature={"again": 0.35, "hard": 0.30, "good": 0.30, "easy": 0.05},
         avg_difficulty=8.0,
         low_stability_ratio=0.50,
-        due_trend=10.0,
         actual_vs_predicted=1.8,
         avg_time_growth=1.6,
         consistency=0.15,
@@ -300,7 +287,6 @@ def test_decide_cooldown():
         button_ratio_mature={"again": 0.01, "hard": 0.15, "good": 0.60, "easy": 0.24},
         avg_difficulty=2.5,
         low_stability_ratio=0.03,
-        due_trend=-5.0,
         actual_vs_predicted=0.6,
         avg_time_growth=0.85,
         consistency=0.9,
@@ -331,7 +317,6 @@ def test_decide_hard_floor():
         button_ratio_mature={"again": 0.55, "hard": 0.20, "good": 0.20, "easy": 0.05},
         avg_difficulty=9.0,
         low_stability_ratio=0.70,
-        due_trend=15.0,
         actual_vs_predicted=2.0,
         avg_time_growth=2.0,
         consistency=0.05,
