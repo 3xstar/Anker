@@ -286,6 +286,8 @@ def collect_metrics(
         "avg_time_growth": None,
         "consistency": None,
         "relearning_stuck": 0,
+        "daily_retention_14d": [],  # [(day_label, retention), ...] для sparkline
+        "daily_again_rate_14d": [],  # [(day_label, again_rate), ...]
     }
 
     # 1-2. True Retention (7 и 14 дней)
@@ -333,6 +335,10 @@ def collect_metrics(
 
     # 10. Застрявшие в переучивании (relearning > 2 за 14 дней)
     metrics["relearning_stuck"] = _relearning_stuck(revlog, today, 14)
+
+    # 11. Дневные ряды для sparkline-графиков (кнопка «Почему?»)
+    metrics["daily_retention_14d"] = _daily_retention_series(revlog, today, 14)
+    metrics["daily_again_rate_14d"] = _daily_again_rate_series(revlog, today, 14)
 
     metrics["has_enough_history"] = (
         metrics["history_days"] >= int(config.get("min_history_days", 7))
@@ -579,3 +585,50 @@ def _relearning_stuck(
         if start <= r["day"] <= today:
             relearn_count[r["cid"]] = relearn_count.get(r["cid"], 0) + 1
     return sum(1 for count in relearn_count.values() if count > 2)
+
+
+def _daily_retention_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """
+    Вычисляет дневной True Retention за последние window_days дней.
+    Возвращает список [(day_label, retention), ...] для sparkline-графика.
+    """
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        eases = [
+            r["ease"]
+            for r in revlog
+            if r["type"] == REVLOG_TYPE_REVIEW
+            and r["lastIvl"] > 1
+            and r["day"] == day
+        ]
+        ret = true_retention_from_eases(eases)
+        label = day.strftime("%d.%m")
+        result.append((label, ret))
+    return result
+
+
+def _daily_again_rate_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """
+    Вычисляет дневной Again-rate за последние window_days дней.
+    Возвращает список [(day_label, again_rate), ...] для sparkline-графика.
+    """
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        eases = [
+            r["ease"]
+            for r in revlog
+            if r["type"] == REVLOG_TYPE_REVIEW
+            and r["day"] == day
+        ]
+        if not eases:
+            result.append((day.strftime("%d.%m"), None))
+            continue
+        again_count = sum(1 for e in eases if e == EASE_AGAIN)
+        result.append((day.strftime("%d.%m"), again_count / len(eases)))
+    return result

@@ -157,8 +157,8 @@ def _daily_routine() -> None:
 
     state["last_check_day"] = today.isoformat()
 
-    # Собираем очередь диалогов: (type, deck_id, deck_name, decision|None)
-    pending: List[Tuple[str, int, str, Any]] = []
+    # Собираем очередь диалогов: (type, deck_id, deck_name, decision|None, metrics|None)
+    pending: List[Tuple[str, int, str, Any, Any]] = []
 
     for deck_id in tracked_ids:
         try:
@@ -197,7 +197,7 @@ def _daily_routine() -> None:
         if anomaly_today:
             streaks["anomaly_free_days"] = 0
             ds["last_anomaly_day"] = today.isoformat()
-            pending.append(("anomaly", deck_id, deck_name, None))
+            pending.append(("anomaly", deck_id, deck_name, None, deck_metrics))
             continue
 
         streaks["anomaly_free_days"] = streaks.get("anomaly_free_days", 0) + 1
@@ -221,7 +221,7 @@ def _daily_routine() -> None:
         should_visit = _should_show_planned_visit(ds, config, today)
         if should_visit:
             ds["last_visit_day"] = today.isoformat()
-            pending.append(("planned", deck_id, deck_name, decision))
+            pending.append(("planned", deck_id, deck_name, decision, deck_metrics))
 
     _save_state(state)
 
@@ -245,7 +245,7 @@ def _should_show_planned_visit(
 # ── Очередь диалогов ───────────────────────────────────────────────────────
 
 def _show_dialog_queue(
-    pending: List[Tuple[str, int, str, Any]],
+    pending: List[Tuple[str, int, str, Any, Any]],
     index: int,
     state: Dict[str, Any],
     config: Dict[str, Any],
@@ -256,7 +256,7 @@ def _show_dialog_queue(
         return
 
     item = pending[index]
-    dialog_type, deck_id, deck_name, extra = item
+    dialog_type, deck_id, deck_name, extra, deck_metrics = item
 
     def on_done() -> None:
         QTimer.singleShot(0, lambda: _show_dialog_queue(
@@ -265,11 +265,11 @@ def _show_dialog_queue(
 
     if dialog_type == "anomaly":
         ds = _get_deck_state(state, deck_id)
-        _show_anomaly_flow(config, ds, deck_id, deck_name, today, on_done)
+        _show_anomaly_flow(config, ds, deck_id, deck_name, today, deck_metrics, on_done)
     else:
         ds = _get_deck_state(state, deck_id)
         decision = extra
-        _show_planned_visit_flow(decision, config, ds, deck_id, deck_name, today, on_done)
+        _show_planned_visit_flow(decision, config, ds, deck_id, deck_name, today, deck_metrics, on_done)
 
 
 # ── Диалоговые потоки (per-deck) ───────────────────────────────────────────
@@ -280,9 +280,16 @@ def _show_anomaly_flow(
     deck_id: int,
     deck_name: str,
     today: datetime.date,
+    deck_metrics: Dict[str, Any],
     on_done: Callable[[], None],
 ) -> None:
     """Запускает цепочку anomaly-диалогов для конкретной колоды."""
+
+    stats_ctx = {
+        "metrics": deck_metrics,
+        "decision_action": "hold",
+        "is_anomaly": True,
+    }
 
     def on_action(action: str) -> None:
         if action == "anomaly_lazy":
@@ -294,7 +301,7 @@ def _show_anomaly_flow(
         elif action == "anomaly_dismiss":
             on_done()
 
-    mascot_ui.show_anomaly_checkin(deck_name, on_action)
+    mascot_ui.show_anomaly_checkin(deck_name, on_action, stats_context=stats_ctx)
 
 
 def _show_lazy_flow(
@@ -378,9 +385,17 @@ def _show_planned_visit_flow(
     deck_id: int,
     deck_name: str,
     today: datetime.date,
+    deck_metrics: Dict[str, Any],
     on_done: Callable[[], None],
 ) -> None:
     """Показывает плановый визит и применяет решение при согласии."""
+
+    stats_ctx = {
+        "metrics": deck_metrics,
+        "decision_action": decision.action,
+        "is_stable": decision.is_stable_streak,
+        "is_anomaly": False,
+    }
 
     def on_action(action: str) -> None:
         if action == "increase_accept":
@@ -389,7 +404,7 @@ def _show_planned_visit_flow(
             _apply_decision(decision, deck_id, ds, today)
         on_done()
 
-    mascot_ui.show_planned_visit(decision, deck_name, on_action)
+    mascot_ui.show_planned_visit(decision, deck_name, on_action, stats_context=stats_ctx)
 
 
 def _apply_decision(
@@ -540,7 +555,7 @@ def _force_analysis() -> None:
         tooltip("Anker: нет отслеживаемых колод. Сначала выберите колоды в меню Anker.")
         return
 
-    pending: List[Tuple[str, int, str, Any]] = []
+    pending: List[Tuple[str, int, str, Any, Any]] = []
 
     for deck_id in tracked_ids:
         try:
@@ -579,7 +594,7 @@ def _force_analysis() -> None:
         )
 
         if anomaly_today:
-            pending.append(("anomaly", deck_id, deck_name, None))
+            pending.append(("anomaly", deck_id, deck_name, None, deck_metrics))
             continue
 
         current_limit = _get_deck_limit(deck_id)
@@ -594,7 +609,7 @@ def _force_analysis() -> None:
             stable_streak_weeks=streaks.get("anomaly_free_days", 0) // 7,
             too_easy_streak_weeks=too_easy_days // 7,
         )
-        pending.append(("planned", deck_id, deck_name, decision))
+        pending.append(("planned", deck_id, deck_name, decision, deck_metrics))
 
     if pending:
         _show_dialog_queue(pending, 0, state, config, today)

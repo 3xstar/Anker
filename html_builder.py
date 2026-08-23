@@ -323,3 +323,193 @@ def build_day_picker_html(
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__CHECKBOXES_HTML__", checkboxes_html)
     )
+
+
+# ── SVG sparkline ──────────────────────────────────────────────────────────
+
+def build_sparkline_svg(
+    data: List[tuple],  # [(label, value), ...], value может быть None
+    width: int = 280,
+    height: int = 60,
+    color: str = "#0078d4",
+) -> str:
+    """
+    Генерирует инлайновый SVG sparkline по дневным значениям метрики.
+
+    Значения None (дни без данных) пропускаются — линия разрывается.
+    """
+    # Фильтруем только точки с данными
+    points = [(i, v) for i, (_, v) in enumerate(data) if v is not None]
+    if len(points) < 2:
+        return ""
+
+    values = [v for _, v in points]
+    min_v = min(values)
+    max_v = max(values)
+    v_range = max_v - min_v if max_v != min_v else 1.0
+
+    padding_x = 4
+    padding_y = 4
+    usable_w = width - 2 * padding_x
+    usable_h = height - 2 * padding_y
+
+    # Строим polyline points
+    coords = []
+    for i, v in points:
+        x = padding_x + (i / (len(data) - 1)) * usable_w if len(data) > 1 else padding_x
+        y = padding_y + usable_h - ((v - min_v) / v_range) * usable_h
+        coords.append(f"{x:.1f},{y:.1f}")
+
+    polyline = " ".join(coords)
+
+    # Точки на графике
+    dots = ""
+    for i, v in points:
+        x = padding_x + (i / (len(data) - 1)) * usable_w if len(data) > 1 else padding_x
+        y = padding_y + usable_h - ((v - min_v) / v_range) * usable_h
+        dots += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="{color}"/>'
+
+    return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  <polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2"
+   stroke-linecap="round" stroke-linejoin="round"/>
+  {dots}
+</svg>"""
+
+
+# ── Шаблоны пояснений для экрана «Почему?» ─────────────────────────────────
+
+def _retention_explanation(retention: Optional[float]) -> str:
+    """Готовые фразы-шаблоны для разных диапазонов True Retention."""
+    if retention is None:
+        return "Недостаточно данных для оценки вспоминаемости."
+    if retention < 0.50:
+        return (
+            "Вспоминаемость ниже 50% значит, что большая часть слов забывается "
+            "и требует повторного изучения почти с нуля."
+        )
+    if retention < 0.70:
+        return (
+            "Вспоминаемость 50–70% — материал усваивается, но значительная "
+            "часть карточек требует повторных усилий."
+        )
+    if retention < 0.85:
+        return (
+            "Вспоминаемость 70–85% — хороший уровень. Большинство карточек "
+            "вспоминается уверенно, но есть куда расти."
+        )
+    return (
+        "Вспоминаемость выше 85% — отличный результат. Материал усваивается "
+        "уверенно, можно подумать об увеличении нагрузки."
+    )
+
+
+def _again_rate_explanation(again_rate: Optional[float]) -> str:
+    """Готовые фразы-шаблоны для разных диапазонов Again-rate."""
+    if again_rate is None:
+        return "Недостаточно данных для оценки доли повторных ошибок."
+    if again_rate > 0.25:
+        return (
+            "Доля ошибок выше 25% — признак перегрузки. Слишком много карточек "
+            "приходится переучивать заново."
+        )
+    if again_rate > 0.15:
+        return (
+            "Доля ошибок 15–25% — повышенный уровень. Часть материала "
+            "забывается быстрее, чем хотелось бы."
+        )
+    if again_rate > 0.08:
+        return (
+            "Доля ошибок 8–15% — нормальный рабочий уровень. "
+            "Большинство повторений проходит успешно."
+        )
+    return (
+        "Доля ошибок ниже 8% — отлично. Карточки вспоминаются легко "
+        "и без усилий."
+    )
+
+
+def _difficulty_explanation(difficulty: Optional[float]) -> str:
+    """Готовые фразы-шаблоны для разных диапазонов сложности FSRS."""
+    if difficulty is None:
+        return "Недостаточно данных для оценки сложности карточек."
+    if difficulty > 7.0:
+        return (
+            "Средняя сложность выше 7 — карточки объективно трудные. "
+            "Стоит снизить темп добавления новых."
+        )
+    if difficulty > 5.0:
+        return (
+            "Средняя сложность 5–7 — умеренный уровень. Карточки требуют "
+            "внимания, но не чрезмерно."
+        )
+    return (
+        "Средняя сложность ниже 5 — карточки относительно лёгкие. "
+        "Можно уверенно добавлять новый материал."
+    )
+
+
+# ── HTML-шаблон экрана обоснования ─────────────────────────────────────────
+
+STATS_TEMPLATE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+__CSS__
+  .stats-container { text-align:center; padding:10px 0; }
+  .metric-name { font-size:13px; color:__TEXT_COLOR__; opacity:0.7; margin-bottom:4px; }
+  .metric-value { font-size:36px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:4px; }
+  .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
+    line-height:1.45; margin:8px 16px; }
+</style></head>
+<body>
+  <div class="bubble-wrapper">
+    <div class="bubble">
+      <div class="stats-container">
+        <div class="metric-name">__METRIC_NAME__</div>
+        <div class="metric-value">__METRIC_VALUE__</div>
+        __SPARKLINE__
+        <div class="metric-explanation">__EXPLANATION__</div>
+      </div>
+    </div>
+  </div>
+  <div class="bottom-area">
+    <div class="character"><img src="__IMAGE_URL__" alt="Anker"></div>
+    <div class="buttons">
+      <button class="btn primary" onclick="pycmd('anker:stats_back')">Назад</button>
+    </div>
+  </div>
+</body></html>"""
+
+
+def build_stats_html(
+    metric_name: str,
+    metric_value: str,
+    sparkline_svg: str,
+    explanation: str,
+    image_filename: str,
+    theme_colors: Dict[str, str] | None = None,
+) -> str:
+    """
+    Собирает HTML экрана обоснования решения (кнопка «Почему?»).
+
+    Args:
+        metric_name: человекочитаемое название метрики.
+        metric_value: значение крупным шрифтом (например, "73%").
+        sparkline_svg: инлайновый SVG график тренда.
+        explanation: 1-2 предложения пояснения простыми словами.
+        image_filename: изображение маскота под характер данных.
+        theme_colors: цвета темы.
+    """
+    if theme_colors is None:
+        theme_colors = DEFAULT_THEME_COLORS
+    css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
+    return (
+        STATS_TEMPLATE
+        .replace("__CSS__", css)
+        .replace("__METRIC_NAME__", metric_name)
+        .replace("__METRIC_VALUE__", metric_value)
+        .replace("__SPARKLINE__", sparkline_svg)
+        .replace("__EXPLANATION__", explanation)
+        .replace("__IMAGE_URL__", image_data_uri(image_filename))
+        .replace("__TEXT_COLOR__", theme_colors.get("text", DEFAULT_THEME_COLORS["text"]))
+    )

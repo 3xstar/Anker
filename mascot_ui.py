@@ -13,7 +13,16 @@ mascot_ui.py — обёртка над AnkiWebView, генерация HTML, п�
 
 from typing import Any, Callable, Dict, List
 
-from .html_builder import build_dialog_html, build_day_picker_html, DEFAULT_THEME_COLORS
+from .html_builder import (
+    build_dialog_html,
+    build_day_picker_html,
+    build_stats_html,
+    build_sparkline_svg,
+    DEFAULT_THEME_COLORS,
+    _retention_explanation,
+    _again_rate_explanation,
+    _difficulty_explanation,
+)
 
 try:
     from aqt import mw
@@ -96,9 +105,9 @@ class MascotDialog(QDialog):
     """
     Модальное диалоговое окно с маскотом Anker.
 
-    Использует AnkiWebView для рендеринга HTML с кастомным CSS (спич-бабл,
-    персонаж, кнопки). Кнопки отправляют pycmd-команды, которые обрабатываются
-    через set_bridge_command.
+    Поддерживает кнопку «Почему?» — при нажатии заменяет содержимое
+    на экран обоснования с метриками и графиком, без закрытия диалога.
+    Кнопка «Назад» возвращает к основному сообщению.
     """
 
     def __init__(
@@ -108,6 +117,7 @@ class MascotDialog(QDialog):
         buttons: List[Dict[str, str]],
         on_action: Callable[[str], None],
         parent=None,
+        stats_context: Dict[str, Any] | None = None,
     ):
         """
         Args:
@@ -115,15 +125,22 @@ class MascotDialog(QDialog):
             message: текст в спич-бабле.
             buttons: список кнопок (см. html_builder.build_buttons_html).
             on_action: callback при нажатии кнопки, получает action-строку.
+            stats_context: данные для экрана «Почему?» (метрики, решение).
         """
         super().__init__(parent or mw)
         self._on_action = on_action
+        self._stats_context = stats_context
+        self._colors = _get_theme_colors()
+
+        # Сохраняем параметры для восстановления после экрана статистики
+        self._main_image = image_filename
+        self._main_message = message
+        self._main_buttons = buttons
+
         self.setWindowTitle("Anker")
         self.setFixedSize(460, 380)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
-
-        colors = _get_theme_colors()
-        self.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
+        self.setStyleSheet(f"QDialog {{ background-color: {self._colors['bg']}; }}")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -133,14 +150,82 @@ class MascotDialog(QDialog):
         self.webview.set_bridge_command(self._handle_pycmd, self)
         self.webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
-        html = build_dialog_html(image_filename, message, buttons, colors)
-        self.webview.stdHtml(html)
+        self._show_main()
         layout.addWidget(self.webview)
+
+    def _show_main(self) -> None:
+        """Показывает основной экран диалога."""
+        html = build_dialog_html(
+            self._main_image, self._main_message, self._main_buttons, self._colors
+        )
+        self.webview.stdHtml(html)
+
+    def _show_stats(self) -> None:
+        """Показывает экран обоснования (кнопка «Почему?»)."""
+        ctx = self._stats_context or {}
+        metrics = ctx.get("metrics", {})
+        decision_action = ctx.get("decision_action", "hold")
+
+        # Выбираем, какую метрику показать, в зависимости от причины решения
+        if decision_action == "decrease":
+            # Перегрузка → показываем retention
+            ret = metrics.get("true_retention_14d")
+            daily = metrics.get("daily_retention_14d", [])
+            metric_name = "Вспоминаемость карточек"
+            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+            sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
+            explanation = _retention_explanation(ret)
+            image = IMG_SAD
+        elif decision_action == "increase":
+            ret = metrics.get("true_retention_14d")
+            daily = metrics.get("daily_retention_14d", [])
+            metric_name = "Вспоминаемость карточек"
+            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+            sparkline = build_sparkline_svg(daily, color="#107c10") if daily else ""
+            explanation = _retention_explanation(ret)
+            image = IMG_ENTHUSIASTIC
+        elif ctx.get("is_anomaly"):
+            # Anomaly → показываем Again-rate
+            again = None
+            daily = metrics.get("daily_again_rate_14d", [])
+            if daily:
+                today_data = daily[-1] if daily else None
+                again = today_data[1] if today_data else None
+            metric_name = "Доля ошибок (сегодня)"
+            metric_value = f"{int(again * 100)}%" if again is not None else "—"
+            sparkline = build_sparkline_svg(daily, color="#d13438") if daily else ""
+            explanation = _again_rate_explanation(again)
+            image = IMG_WORRIED
+        else:
+            # Нейтрально / stable streak
+            ret = metrics.get("true_retention_14d")
+            daily = metrics.get("daily_retention_14d", [])
+            metric_name = "Вспоминаемость карточек"
+            metric_value = f"{int(ret * 100)}%" if ret is not None else "—"
+            sparkline = build_sparkline_svg(daily) if daily else ""
+            explanation = _retention_explanation(ret)
+            image = IMG_PROUDED if ctx.get("is_stable") else IMG_NEUTRAL
+
+        html = build_stats_html(
+            metric_name=metric_name,
+            metric_value=metric_value,
+            sparkline_svg=sparkline,
+            explanation=explanation,
+            image_filename=image,
+            theme_colors=self._colors,
+        )
+        self.webview.stdHtml(html)
 
     def _handle_pycmd(self, cmd: str) -> None:
         """Обрабатывает pycmd-команды от кнопок."""
         if cmd.startswith("anker:"):
             action = cmd[len("anker:"):]
+            if action == "why":
+                self._show_stats()
+                return
+            if action == "stats_back":
+                self._show_main()
+                return
             self._on_action(action)
             self.accept()
 
@@ -148,9 +233,10 @@ class MascotDialog(QDialog):
 # ── Фабрики диалогов по сценариям ──────────────────────────────────────────
 
 def show_planned_visit(
-    decision: Any,  # Decision из decision_engine
+    decision: Any,
     deck_name: str,
     on_action: Callable[[str], None],
+    stats_context: Dict[str, Any] | None = None,
 ) -> None:
     """
     Показывает плановый визит маскота.
@@ -162,7 +248,6 @@ def show_planned_visit(
       - action == "hold" иначе → neutral.png
     """
     is_stable = decision.is_stable_streak
-    is_too_easy = decision.is_too_easy
 
     if decision.action == "increase":
         image = IMG_ENTHUSIASTIC
@@ -173,6 +258,7 @@ def show_planned_visit(
         buttons = [
             {"label": "Да, давай увеличим", "action": "increase_accept", "primary": True},
             {"label": "Пока оставим как есть", "action": "increase_decline"},
+            {"label": "Почему?", "action": "why"},
         ]
     elif decision.action == "decrease":
         image = IMG_UNDERSTANDING
@@ -183,6 +269,7 @@ def show_planned_visit(
         buttons = [
             {"label": "Да, давай снизим", "action": "decrease_accept", "primary": True},
             {"label": "Нет, я справлюсь", "action": "decrease_decline"},
+            {"label": "Почему?", "action": "why"},
         ]
     elif is_stable:
         image = IMG_PROUDED
@@ -192,6 +279,7 @@ def show_planned_visit(
         )
         buttons = [
             {"label": "Спасибо!", "action": "prouded_ack", "primary": True},
+            {"label": "Почему?", "action": "why"},
         ]
     else:
         image = IMG_NEUTRAL
@@ -201,15 +289,17 @@ def show_planned_visit(
         )
         buttons = [
             {"label": "Хорошо", "action": "neutral_ack", "primary": True},
+            {"label": "Почему?", "action": "why"},
         ]
 
-    dialog = MascotDialog(image, message, buttons, on_action)
+    dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
     dialog.exec()
 
 
 def show_anomaly_checkin(
     deck_name: str,
     on_action: Callable[[str], None],
+    stats_context: Dict[str, Any] | None = None,
 ) -> None:
     """Показывает anomaly check-in диалог. Изображение: worried.png."""
     image = IMG_WORRIED
@@ -221,8 +311,9 @@ def show_anomaly_checkin(
         {"label": "Лень / не хочется", "action": "anomaly_lazy"},
         {"label": "Занят(а) сегодня", "action": "anomaly_busy"},
         {"label": "Само пройдёт", "action": "anomaly_dismiss", "primary": True},
+        {"label": "Почему?", "action": "why"},
     ]
-    dialog = MascotDialog(image, message, buttons, on_action)
+    dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
     dialog.exec()
 
 
