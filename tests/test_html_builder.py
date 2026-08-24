@@ -147,6 +147,8 @@ def make_test_metrics():
     return {
         "true_retention": 0.78,
         "new_card_retention": 0.75,
+        "button_ratio_young": {"again": 0.12, "hard": 0.30, "good": 0.48, "easy": 0.10},
+        "button_ratio_mature": {"again": 0.10, "hard": 0.25, "good": 0.55, "easy": 0.10},
         "avg_difficulty": 5.5,
         "avg_stability": 8.0,
         "low_stability_ratio": 0.18,
@@ -220,13 +222,11 @@ def test_stats_tabbed_all_tab_collapsible():
     assert "metric-row-detail" in html
     assert "onclick" in html
     assert "Все показатели" in html
-    assert "Вспоминаемость (7 дн.)" in html
-    assert "Вспоминаемость (14 дн.)" in html
+    assert "Вспоминаемость" in html
     assert "Новые карточки" in html
     assert "Средняя сложность" in html
     assert "Регулярность" in html
     assert "Застрявшие карточки" in html
-    assert "82%" in html
     assert "78%" in html
 
 

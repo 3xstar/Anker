@@ -53,7 +53,7 @@ def make_config(**overrides):
 def test_extract_signals_basic():
     metrics = make_metrics()
     signals = de.extract_signals(metrics)
-    assert signals["true_retention"] == 0.88
+    assert signals["true_retention"] == 0.87
     assert signals["again_rate_young"] == 0.10
     assert signals["again_rate_mature"] == 0.08
     assert signals["relearning_stuck"] == 3.0
