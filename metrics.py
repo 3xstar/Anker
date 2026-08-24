@@ -295,8 +295,9 @@ def collect_metrics(
     # 1. True Retention (единый период)
     metrics["true_retention"] = _retention_window(revlog, today, period)
 
-    # 2. Retention по новым карточкам
-    metrics["new_card_retention"] = _new_card_retention(revlog, today, period)
+    # 2. Retention по новым карточкам (окно 30 дней — шире периода анализа,
+    # чтобы не зависеть от темпа добавления карточек)
+    metrics["new_card_retention"] = _new_card_retention(revlog, today, 30)
 
     # 3. Соотношение кнопок (young/mature)
     metrics["button_ratio_young"] = _button_ratio_by_maturity(
@@ -336,7 +337,7 @@ def collect_metrics(
     # 9. Дневные ряды для sparkline-графиков
     metrics["daily_retention"] = _daily_retention_series(revlog, today, period)
     metrics["daily_again_rate"] = _daily_again_rate_series(revlog, today, period)
-    metrics["daily_new_card_retention"] = _daily_new_card_retention_series(revlog, today, period)
+    metrics["daily_new_card_retention"] = _daily_new_card_retention_series(revlog, today, 30)
     metrics["daily_review_count"] = _daily_review_count_series(revlog, today, period)
     metrics["daily_relearning_count"] = _daily_relearning_count_series(revlog, today, period)
 

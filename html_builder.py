@@ -162,11 +162,12 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   }
   .stats-link-row { text-align:center; margin-top:4px; }
   .btn-link {
-    background:none; border:none; color:__TEXT_COLOR__; opacity:0.55;
-    font-size:12px; font-family:inherit; cursor:pointer; padding:4px 8px;
+    background:none; border:none; color:#ffffff;
+    font-size:15px; font-weight:600; font-family:inherit;
+    cursor:pointer; padding:8px 16px;
     text-decoration:underline; transition:opacity 0.15s;
   }
-  .btn-link:hover { opacity:0.8; }
+  .btn-link:hover { opacity:0.85; }
 """
 
 
@@ -566,17 +567,24 @@ __CSS__
   .metric-row-name { font-size:13px; color:__TEXT_COLOR__; }
   .metric-row-value { font-size:14px; font-weight:600; color:__TEXT_COLOR__; }
   .metric-row-desc { font-size:11px; color:__TEXT_COLOR__; opacity:0.6; }
-  .metric-row { cursor:pointer; user-select:none; }
-  .metric-row-detail { display:none; padding-top:6px; }
+  .metric-row { display:block; cursor:pointer; user-select:none;
+    padding:8px 0; border-bottom:1px solid __BORDER_COLOR__; }
+  .metric-row-header { display:flex; justify-content:space-between; align-items:center; }
+  .metric-row-detail { display:none; padding-top:8px; }
   .metric-row.expanded .metric-row-detail { display:block; }
+  .summary-tab-content { display:flex; flex-direction:column;
+    justify-content:center; align-items:center; min-height:100%; }
   .summary-score { font-size:48px; font-weight:800; margin:8px 0; }
   .summary-comment { font-size:14px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
   .summary-compare { font-size:12px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
+  /* Экран статистики — шире, чем простой диалог */
+  .stats-screen .bubble-wrapper { max-width:520px; }
+  .stats-screen .bottom-area { max-width:520px; }
 </style>
 <script>
 function toggleMetricRow(el) { el.classList.toggle('expanded'); }
 </script></head>
-<body>
+<body class="__BODY_CLASS__">
   <div class="bubble-wrapper">
     <div class="bubble">
       <div class="tabs">
@@ -822,9 +830,11 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'
+            f'<div class="metric-row-header">'
             f'<div><div class="metric-row-name">{name}</div>'
             f'<div class="metric-row-desc">{desc}</div></div>'
             f'<div class="metric-row-value" style="color:{color};">{display}</div>'
+            f'</div>'
             f'{detail_html}'
             f'</div>'
         )
@@ -896,12 +906,14 @@ def _build_summary_tab_content(
             compare_html = f"Держится примерно на том же уровне (было {prev:.1f}/10)"
 
     parts = [
+        '<div class="summary-tab-content">',
         '<div class="stats-container">',
         f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:20px;">/10</span></div>',
         f'<div class="summary-comment">{comment}</div>',
     ]
     if compare_html:
         parts.append(f'<div class="summary-compare">{compare_html}</div>')
+    parts.append('</div>')
     parts.append('</div>')
     return "\n".join(parts)
 
@@ -949,6 +961,7 @@ def build_stats_tabbed_html(
     return (
         STATS_TABBED_TEMPLATE
         .replace("__CSS__", css)
+        .replace("__BODY_CLASS__", "stats-screen")
         .replace("__TAB_SUMMARY_ACTIVE__", tab_summary_active)
         .replace("__TAB_MAIN_ACTIVE__", tab_main_active)
         .replace("__TAB_ALL_ACTIVE__", tab_all_active)

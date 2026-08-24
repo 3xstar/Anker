@@ -313,6 +313,8 @@ def test_stats_tabbed_no_placeholder_markers():
         image_filename="neutral.png",
     )
     assert "__CSS__" not in html
+    assert "__BODY_CLASS__" not in html
+    assert "__TAB_SUMMARY_ACTIVE__" not in html
     assert "__TAB_MAIN_ACTIVE__" not in html
     assert "__TAB_ALL_ACTIVE__" not in html
     assert "__TAB_CONTENT__" not in html

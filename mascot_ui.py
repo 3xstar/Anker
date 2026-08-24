@@ -107,12 +107,12 @@ class MascotDialog(QDialog):
     """
     Модальное диалоговое окно с маскотом Anker.
 
-    Поддерживает кнопку «Почему?» — при нажатии заменяет содержимое
-    на экран обоснования с метриками и графиком, без закрытия диалога.
+    Поддерживает кнопку «Моя статистика» — при нажатии заменяет содержимое
+    на экран статистики с вкладками, без закрытия диалога.
     Кнопка «Назад» возвращает к основному сообщению.
 
-    Размер окна адаптируется под высоту контента (от 320 до 700 px),
-    окно центрируется относительно главного окна Anki.
+    Размер окна адаптируется под контент: экран статистики шире (560px),
+    простой диалог — 460px. Высота подгоняется по реальной высоте DOM.
     """
 
     def __init__(
@@ -130,7 +130,7 @@ class MascotDialog(QDialog):
             message: текст в спич-бабле.
             buttons: список кнопок (см. html_builder.build_buttons_html).
             on_action: callback при нажатии кнопки, получает action-строку.
-            stats_context: данные для экрана «Почему?» (метрики, решение).
+            stats_context: данные для экрана «Моя статистика» (метрики, решение).
         """
         super().__init__(parent or mw)
         self._on_action = on_action
@@ -141,10 +141,11 @@ class MascotDialog(QDialog):
         self._main_image = image_filename
         self._main_message = message
         self._main_buttons = buttons
-        self._active_stats_tab = "main"  # "main" или "all"
+        self._active_stats_tab = "summary"
+        self._is_stats_screen = False
 
         self.setWindowTitle("Anker")
-        self.setMinimumSize(460, 320)
+        self.setMinimumSize(460, 180)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setStyleSheet(f"QDialog {{ background-color: {self._colors['bg']}; }}")
 
@@ -161,20 +162,30 @@ class MascotDialog(QDialog):
         layout.addWidget(self.webview)
 
     def _on_load_finished(self, ok: bool) -> None:
-        """Измеряет высоту по завершении загрузки + контрольный замер."""
+        """Однократный замер высоты с небольшой задержкой после загрузки."""
         if ok:
-            self._resize_to_content()
-            QTimer.singleShot(150, self._resize_to_content)
+            QTimer.singleShot(100, self._resize_to_content)
+
+    def _render_html(self, html: str) -> None:
+        """
+        Загружает новый HTML с явным сбросом DOM. setHtml("") гарантирует
+        полную замену страницы, а не наложение поверх предыдущего состояния,
+        что предотвращает накопительный рост scrollHeight между рендерами.
+        """
+        self.webview.page().setHtml("")
+        self.webview.stdHtml(html)
 
     def _show_main(self) -> None:
         """Показывает основной экран диалога."""
+        self._is_stats_screen = False
         html = build_dialog_html(
             self._main_image, self._main_message, self._main_buttons, self._colors
         )
-        self.webview.stdHtml(html)
+        self._render_html(html)
 
-    def _show_stats(self, tab: str = "main") -> None:
-        """Показывает экран обоснования с вкладками «Главное» / «Все показатели»."""
+    def _show_stats(self, tab: str = "summary") -> None:
+        """Показывает экран статистики с вкладками «Итог» / «Главное» / «Все показатели»."""
+        self._is_stats_screen = True
         self._active_stats_tab = tab
         ctx = self._stats_context or {}
         metrics = ctx.get("metrics", {})
@@ -205,7 +216,7 @@ class MascotDialog(QDialog):
             metric_weights=ctx.get("metric_weights"),
             last_summary_score=ctx.get("last_summary_score"),
         )
-        self.webview.stdHtml(html)
+        self._render_html(html)
 
     def _resize_to_content(self) -> None:
         """Измеряет реальную высоту контента и подгоняет размер окна."""
@@ -216,9 +227,10 @@ class MascotDialog(QDialog):
         )
 
     def _apply_content_height(self, height: int) -> None:
-        """Применяет высоту окна с разумными пределами и центрирует."""
-        target = min(max(height + 40, 320), 700)
-        self.setFixedSize(460, target)
+        """Применяет размер окна: шире для статистики, ниже — по контенту."""
+        width = 560 if self._is_stats_screen else 460
+        target = min(height + 40, 700)
+        self.setFixedSize(width, target)
         self._center_on_parent()
 
     def _center_on_parent(self) -> None:
@@ -411,7 +423,7 @@ def show_day_of_week_picker(
 
     dialog = QDialog(mw)
     dialog.setWindowTitle("Anker — дни недели")
-    dialog.setMinimumSize(460, 320)
+    dialog.setMinimumSize(460, 180)
     dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
     dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
     layout = QVBoxLayout(dialog)
@@ -431,7 +443,7 @@ def show_day_of_week_picker(
         )
 
     def _apply_day_picker_height(height: int) -> None:
-        target = min(max(height + 40, 320), 700)
+        target = min(height + 40, 700)
         dialog.setFixedSize(460, target)
         if mw is not None:
             try:
@@ -466,5 +478,7 @@ def show_day_of_week_picker(
     webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
     layout.addWidget(webview)
-    webview.page().loadFinished.connect(lambda ok: (_resize_day_picker(), QTimer.singleShot(150, _resize_day_picker)) if ok else None)
+    webview.page().loadFinished.connect(
+        lambda ok: QTimer.singleShot(100, _resize_day_picker) if ok else None
+    )
     dialog.exec()
