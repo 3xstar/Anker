@@ -287,6 +287,9 @@ def collect_metrics(
         "relearning_stuck": 0,
         "daily_retention": [],  # [(day_label, retention), ...] для sparkline
         "daily_again_rate": [],  # [(day_label, again_rate), ...]
+        "daily_new_card_retention": [],
+        "daily_review_count": [],
+        "daily_relearning_count": [],
     }
 
     # 1. True Retention (единый период)
@@ -333,6 +336,9 @@ def collect_metrics(
     # 9. Дневные ряды для sparkline-графиков
     metrics["daily_retention"] = _daily_retention_series(revlog, today, period)
     metrics["daily_again_rate"] = _daily_again_rate_series(revlog, today, period)
+    metrics["daily_new_card_retention"] = _daily_new_card_retention_series(revlog, today, period)
+    metrics["daily_review_count"] = _daily_review_count_series(revlog, today, period)
+    metrics["daily_relearning_count"] = _daily_relearning_count_series(revlog, today, period)
 
     metrics["has_enough_history"] = (
         metrics["history_days"] >= int(config.get("min_history_days", 7))
@@ -581,4 +587,69 @@ def _daily_again_rate_series(
             continue
         again_count = sum(1 for e in eases if e == EASE_AGAIN)
         result.append((day.strftime("%d.%m"), again_count / len(eases)))
+    return result
+
+
+def _daily_new_card_retention_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """Дневной retention по новым карточкам за window_days дней."""
+    # Для каждого дня: карточки, впервые вышедшие из learning в этот день
+    first_review_day: Dict[int, datetime.date] = {}
+    for r in revlog:
+        if r["type"] != REVLOG_TYPE_REVIEW:
+            continue
+        cid = r["cid"]
+        if cid not in first_review_day or r["day"] < first_review_day[cid]:
+            first_review_day[cid] = r["day"]
+
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        graduated_today = {cid for cid, d in first_review_day.items() if d == day}
+        if not graduated_today:
+            result.append((day.strftime("%d.%m"), None))
+            continue
+        eases = [
+            r["ease"]
+            for r in revlog
+            if r["type"] == REVLOG_TYPE_REVIEW
+            and r["cid"] in graduated_today
+            and r["lastIvl"] > 1
+            and r["day"] <= today
+        ]
+        ret = true_retention_from_eases(eases)
+        result.append((day.strftime("%d.%m"), ret))
+    return result
+
+
+def _daily_review_count_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """Дневное количество повторений за window_days дней (для визуализации регулярности)."""
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        count = sum(
+            1 for r in revlog
+            if r["type"] in (REVLOG_TYPE_REVIEW, REVLOG_TYPE_RELEARN)
+            and r["day"] == day
+        )
+        result.append((day.strftime("%d.%m"), float(count) if count > 0 else None))
+    return result
+
+
+def _daily_relearning_count_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """Дневное количество переучиваний за window_days дней."""
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        count = sum(
+            1 for r in revlog
+            if r["type"] == REVLOG_TYPE_RELEARN
+            and r["day"] == day
+        )
+        result.append((day.strftime("%d.%m"), float(count) if count > 0 else None))
     return result

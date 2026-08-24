@@ -159,7 +159,15 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   }
   .btn.primary:hover {
     background: #106ebe;
-  }"""
+  }
+  .stats-link-row { text-align:center; margin-top:4px; }
+  .btn-link {
+    background:none; border:none; color:__TEXT_COLOR__; opacity:0.55;
+    font-size:12px; font-family:inherit; cursor:pointer; padding:4px 8px;
+    text-decoration:underline; transition:opacity 0.15s;
+  }
+  .btn-link:hover { opacity:0.8; }
+"""
 
 
 # ── HTML-шаблон основного диалога ──────────────────────────────────────────
@@ -183,6 +191,9 @@ __CSS__
     <div class="buttons">
       __BUTTONS_HTML__
     </div>
+  </div>
+  <div class="stats-link-row">
+    <button class="btn-link" onclick="pycmd('anker:show_stats')">Моя статистика</button>
   </div>
 </body>
 </html>"""
@@ -558,6 +569,9 @@ __CSS__
   .metric-row { cursor:pointer; user-select:none; }
   .metric-row-detail { display:none; padding-top:6px; }
   .metric-row.expanded .metric-row-detail { display:block; }
+  .summary-score { font-size:48px; font-weight:800; margin:8px 0; }
+  .summary-comment { font-size:14px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
+  .summary-compare { font-size:12px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
 </style>
 <script>
 function toggleMetricRow(el) { el.classList.toggle('expanded'); }
@@ -566,6 +580,8 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
   <div class="bubble-wrapper">
     <div class="bubble">
       <div class="tabs">
+        <button class="tab-btn __TAB_SUMMARY_ACTIVE__"
+         onclick="pycmd('anker:stats_tab_summary')">Итог</button>
         <button class="tab-btn __TAB_MAIN_ACTIVE__"
          onclick="pycmd('anker:stats_tab_main')">Главное</button>
         <button class="tab-btn __TAB_ALL_ACTIVE__"
@@ -581,6 +597,62 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
     </div>
   </div>
 </body></html>"""
+
+
+# ── Цветовая шкала для значений метрик ──────────────────────────────────────
+
+def _grade_color(
+    value: Optional[float],
+    thresholds: List[float],
+    colors: List[str],
+    invert: bool = False,
+) -> str:
+    """
+    Возвращает CSS-цвет для значения метрики на основе порогов.
+
+    thresholds — границы диапазонов по возрастанию, colors — цвета для каждого
+    диапазона (len(colors) == len(thresholds) + 1). invert=True переворачивает
+    направление (когда МЕНЬШЕ значит ЛУЧШЕ, например для доли ошибок).
+    """
+    if value is None:
+        return "__TEXT_COLOR__"
+    idx = 0
+    for t in thresholds:
+        if value >= t:
+            idx += 1
+        else:
+            break
+    if invert:
+        idx = len(colors) - 1 - idx
+    return colors[idx]
+
+
+# Палитра: плохо → ближе к плохому → средне → ближе к хорошему → хорошо
+_GRADE_COLORS = ["#d13438", "#e8833a", "#e8c93a", "#8dbf3f", "#107c10"]
+
+# Пороги для каждой метрики (согласованы с _xxx_explanation)
+_METRIC_THRESHOLDS: Dict[str, tuple] = {
+    "true_retention":        ([0.50, 0.70, 0.85, 0.95], False),
+    "new_card_retention":    ([0.50, 0.70, 0.85, 0.95], False),
+    "avg_difficulty":        ([3.0, 5.0, 7.0, 9.0], True),
+    "avg_stability":         ([3.0, 10.0, 20.0, 40.0], False),
+    "low_stability_ratio":   ([0.10, 0.20, 0.30, 0.40], True),
+    "actual_vs_predicted":   ([0.90, 1.10, 1.30, 1.50], True),
+    "avg_time_growth":       ([0.90, 1.10, 1.30, 1.50], True),
+    "consistency":           ([0.30, 0.50, 0.70, 0.90], False),
+    "relearning_stuck":      ([2.0, 5.0, 10.0, 20.0], True),
+    "again_rate_young":      ([0.05, 0.10, 0.20, 0.30], True),
+    "again_rate_mature":     ([0.05, 0.10, 0.20, 0.30], True),
+}
+
+
+def _metric_color(key: str, value: Optional[float]) -> str:
+    """Возвращает цвет для значения метрики по её ключу."""
+    entry = _METRIC_THRESHOLDS.get(key)
+    if entry is None:
+        return "__TEXT_COLOR__"
+    thresholds, invert = entry
+    return _grade_color(value, list(thresholds), _GRADE_COLORS, invert)
 
 
 # ── Определения метрик для вкладки «Главное» ────────────────────────────────
@@ -668,9 +740,11 @@ def _build_main_tab_content(
         sparkline = build_sparkline_svg(daily, color=color) if daily else ""
         explanation = explain_fn(value)
 
+        value_color = _metric_color(key, value)
+
         parts.append('<div class="stats-container">')
         parts.append(f'<div class="metric-name">{name}</div>')
-        parts.append(f'<div class="metric-value">{display}</div>')
+        parts.append(f'<div class="metric-value" style="color:{value_color};">{display}</div>')
         if sparkline:
             parts.append(sparkline)
         parts.append(f'<div class="metric-explanation">{explanation}</div>')
@@ -683,14 +757,14 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
         ("Вспоминаемость", "true_retention", _retention_explanation, "%", "daily_retention"),
-        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%", None),
+        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%", "daily_new_card_retention"),
         ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "", None),
         ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.", None),
         ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%", None),
         ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, "", None),
         ("Время на карточку", "avg_time_growth", _time_growth_explanation, "", None),
-        ("Регулярность", "consistency", _consistency_explanation, "%", None),
-        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "", None),
+        ("Регулярность", "consistency", _consistency_explanation, "%", "daily_review_count"),
+        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "", "daily_relearning_count"),
     ]
 
     parts = [
@@ -709,26 +783,125 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
             display = f"{value:.1f}" if isinstance(value, float) else str(value)
 
         desc = explain_fn(value)
+        color = _metric_color(key, value)
 
-        # Sparkline для сворачиваемого блока
-        sparkline_html = ""
+        # Sparkline или текстовая детализация для сворачиваемого блока
+        detail_html = ""
         if daily_key:
             daily = metrics.get(daily_key, [])
             if daily:
                 sparkline_html = build_sparkline_svg(daily)
-
-        detail_html = ""
-        if sparkline_html:
-            detail_html = f'<div class="metric-row-detail">{sparkline_html}</div>'
+                detail_html = f'<div class="metric-row-detail">{sparkline_html}</div>'
+        elif key == "avg_difficulty" and value is not None:
+            detail_html = (
+                f'<div class="metric-row-detail">'
+                f'Сложность FSRS: {value:.1f} из 10. '
+                f'Чем выше — тем труднее карточки.</div>'
+            )
+        elif key == "avg_stability" and value is not None:
+            detail_html = (
+                f'<div class="metric-row-detail">'
+                f'Средний интервал до следующего повторения: {value:.1f} дн.</div>'
+            )
+        elif key == "low_stability_ratio" and value is not None:
+            detail_html = (
+                f'<div class="metric-row-detail">'
+                f'{int(value * 100)}% карточек имеют стабильность ниже 1 дня.</div>'
+            )
+        elif key == "actual_vs_predicted" and value is not None:
+            detail_html = (
+                f'<div class="metric-row-detail">'
+                f'Отношение повторений за последний период к предыдущему: {value:.2f}. '
+                f'{"> 1 — нагрузка растёт" if value > 1 else "< 1 — нагрузка снижается"}.</div>'
+            )
+        elif key == "avg_time_growth" and value is not None:
+            detail_html = (
+                f'<div class="metric-row-detail">'
+                f'Отношение среднего времени на карточку к предыдущему периоду: {value:.2f}.</div>'
+            )
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'
             f'<div><div class="metric-row-name">{name}</div>'
             f'<div class="metric-row-desc">{desc}</div></div>'
-            f'<div class="metric-row-value">{display}</div>'
+            f'<div class="metric-row-value" style="color:{color};">{display}</div>'
             f'{detail_html}'
             f'</div>'
         )
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
+def _build_summary_tab_content(
+    metrics: Dict[str, Any],
+    metric_weights: Dict[str, float] | None,
+    last_summary_score: Dict[str, Any] | None,
+) -> str:
+    """Собирает HTML для вкладки «Итог» — оценка 1-10 + сравнение с прошлым."""
+    if metric_weights is None:
+        metric_weights = {}
+
+    # Расчёт оценки: нормализуем каждую доступную метрику в 0-1,
+    # взвешиваем, масштабируем в 1-10
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for key, (thresholds, invert) in _METRIC_THRESHOLDS.items():
+        value = metrics.get(key)
+        if value is None:
+            continue
+        weight = metric_weights.get(key, 0.0)
+        if weight <= 0:
+            continue
+        # Нормализация: где находится значение среди порогов (0..len(thresholds))
+        idx = 0
+        for t in thresholds:
+            if value >= t:
+                idx += 1
+            else:
+                break
+        if invert:
+            idx = len(thresholds) - idx
+        normalized = idx / len(thresholds)  # 0..1
+        weighted_sum += normalized * weight
+        total_weight += weight
+
+    if total_weight > 0:
+        score = 1.0 + (weighted_sum / total_weight) * 9.0  # 1..10
+    else:
+        score = 5.0
+
+    score_display = f"{score:.1f}"
+    score_color = _grade_color(score / 10.0, [0.3, 0.5, 0.7, 0.9], _GRADE_COLORS, False)
+
+    # Комментарий по диапазону
+    if score < 4.0:
+        comment = "Сейчас непростой период, но это временно. Продолжай — каждый день делает тебя сильнее!"
+    elif score < 6.0:
+        comment = "Держишься уверенно. Есть над чем поработать, но ты на верном пути."
+    elif score < 8.0:
+        comment = "Хороший ритм! Материал усваивается стабильно, продолжай в том же духе."
+    else:
+        comment = "Отличный результат! Ты на высоте — материал закрепляется надёжно и легко."
+
+    # Сравнение с прошлым
+    compare_html = ""
+    if last_summary_score and last_summary_score.get("value") is not None:
+        prev = last_summary_score["value"]
+        diff = score - prev
+        if diff > 0.5:
+            compare_html = f"Стало заметно лучше, чем в прошлый раз (было {prev:.1f}/10)"
+        elif diff < -0.5:
+            compare_html = f"Немного просело по сравнению с прошлым разом (было {prev:.1f}/10)"
+        else:
+            compare_html = f"Держится примерно на том же уровне (было {prev:.1f}/10)"
+
+    parts = [
+        '<div class="stats-container">',
+        f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:20px;">/10</span></div>',
+        f'<div class="summary-comment">{comment}</div>',
+    ]
+    if compare_html:
+        parts.append(f'<div class="summary-compare">{compare_html}</div>')
     parts.append('</div>')
     return "\n".join(parts)
 
@@ -742,35 +915,41 @@ def build_stats_tabbed_html(
     image_filename: str,
     theme_colors: Dict[str, str] | None = None,
     metric_weights: Dict[str, float] | None = None,
+    last_summary_score: Dict[str, Any] | None = None,
 ) -> str:
     """
-    Собирает HTML экрана обоснования с вкладками «Главное» и «Все показатели».
+    Собирает HTML экрана обоснования с вкладками «Итог», «Главное» и «Все показатели».
 
     Args:
         metrics: словарь метрик из metrics.collect_metrics().
         decision_action: "increase"/"decrease"/"hold".
         is_anomaly: флаг anomaly-сценария.
         is_stable: флаг стабильной серии.
-        active_tab: "main" или "all".
+        active_tab: "summary", "main" или "all".
         image_filename: изображение маскота.
         theme_colors: цвета темы.
-        metric_weights: веса метрик из конфига для сортировки на вкладке «Главное».
+        metric_weights: веса метрик из конфига.
+        last_summary_score: предыдущая оценка для сравнения {"value": 7.3, "date": "..."}.
     """
     if theme_colors is None:
         theme_colors = DEFAULT_THEME_COLORS
     css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
 
+    tab_summary_active = "active" if active_tab == "summary" else ""
     tab_main_active = "active" if active_tab == "main" else ""
     tab_all_active = "active" if active_tab == "all" else ""
 
     if active_tab == "all":
         content = _build_all_tab_content(metrics)
-    else:
+    elif active_tab == "main":
         content = _build_main_tab_content(metrics, decision_action, is_anomaly, metric_weights)
+    else:
+        content = _build_summary_tab_content(metrics, metric_weights, last_summary_score)
 
     return (
         STATS_TABBED_TEMPLATE
         .replace("__CSS__", css)
+        .replace("__TAB_SUMMARY_ACTIVE__", tab_summary_active)
         .replace("__TAB_MAIN_ACTIVE__", tab_main_active)
         .replace("__TAB_ALL_ACTIVE__", tab_all_active)
         .replace("__TAB_CONTENT__", content)

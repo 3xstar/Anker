@@ -271,6 +271,37 @@ def test_stats_tabbed_anomaly_shows_again_rate():
     assert "Доля ошибок" in html
 
 
+def test_stats_tabbed_summary_tab():
+    """Вкладка «Итог» показывает оценку и комментарий."""
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+    )
+    assert "Итог" in html
+    assert "/10" in html
+    assert "summary-score" in html
+
+
+def test_stats_tabbed_summary_with_compare():
+    """Вкладка «Итог» показывает сравнение с прошлым замером."""
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+        last_summary_score={"value": 6.0, "date": "2026-08-20"},
+    )
+    assert "было 6.0/10" in html
+
+
 def test_stats_tabbed_no_placeholder_markers():
     metrics = make_test_metrics()
     html = hb.build_stats_tabbed_html(
@@ -353,3 +384,32 @@ def test_sparkline_generates_svg():
 def test_sparkline_single_point_returns_empty():
     svg = hb.build_sparkline_svg([("15.08", 0.80)])
     assert svg == ""
+
+
+# ── Тесты: _grade_color ────────────────────────────────────────────────────
+
+def test_grade_color_best():
+    assert hb._grade_color(0.95, [0.50, 0.70, 0.85, 0.95], hb._GRADE_COLORS) == "#107c10"
+
+
+def test_grade_color_worst():
+    assert hb._grade_color(0.30, [0.50, 0.70, 0.85, 0.95], hb._GRADE_COLORS) == "#d13438"
+
+
+def test_grade_color_invert():
+    # Для метрик где меньше = лучше (сложность), 9.0 = плохо → красный
+    assert hb._grade_color(9.0, [3.0, 5.0, 7.0, 9.0], hb._GRADE_COLORS, invert=True) == "#d13438"
+    assert hb._grade_color(2.0, [3.0, 5.0, 7.0, 9.0], hb._GRADE_COLORS, invert=True) == "#107c10"
+
+
+def test_grade_color_none():
+    assert hb._grade_color(None, [0.5, 0.7], ["#a", "#b", "#c"]) == "__TEXT_COLOR__"
+
+
+def test_metric_color_retention():
+    assert hb._metric_color("true_retention", 0.92) == "#8dbf3f"
+
+
+def test_metric_color_difficulty():
+    # Высокая сложность = плохо → красный
+    assert hb._metric_color("avg_difficulty", 8.0) == "#e8833a"

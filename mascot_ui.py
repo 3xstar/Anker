@@ -203,6 +203,7 @@ class MascotDialog(QDialog):
             image_filename=image,
             theme_colors=self._colors,
             metric_weights=ctx.get("metric_weights"),
+            last_summary_score=ctx.get("last_summary_score"),
         )
         self.webview.stdHtml(html)
 
@@ -235,8 +236,11 @@ class MascotDialog(QDialog):
         """Обрабатывает pycmd-команды от кнопок."""
         if cmd.startswith("anker:"):
             action = cmd[len("anker:"):]
-            if action == "why":
-                self._show_stats("main")
+            if action == "show_stats":
+                self._show_stats("summary")
+                return
+            if action == "stats_tab_summary":
+                self._show_stats("summary")
                 return
             if action == "stats_tab_main":
                 self._show_stats("main")
@@ -279,7 +283,6 @@ def show_planned_visit(
         buttons = [
             {"label": "Да, давай увеличим", "action": "increase_accept", "primary": True},
             {"label": "Пока оставим как есть", "action": "increase_decline"},
-            {"label": "Почему?", "action": "why"},
         ]
     elif decision.action == "decrease":
         image = IMG_UNDERSTANDING
@@ -290,7 +293,6 @@ def show_planned_visit(
         buttons = [
             {"label": "Да, давай снизим", "action": "decrease_accept", "primary": True},
             {"label": "Нет, я справлюсь", "action": "decrease_decline"},
-            {"label": "Почему?", "action": "why"},
         ]
     elif is_stable:
         image = IMG_PROUDED
@@ -300,7 +302,6 @@ def show_planned_visit(
         )
         buttons = [
             {"label": "Спасибо!", "action": "prouded_ack", "primary": True},
-            {"label": "Почему?", "action": "why"},
         ]
     else:
         image = IMG_NEUTRAL
@@ -310,7 +311,6 @@ def show_planned_visit(
         )
         buttons = [
             {"label": "Хорошо", "action": "neutral_ack", "primary": True},
-            {"label": "Почему?", "action": "why"},
         ]
 
     dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
@@ -332,7 +332,6 @@ def show_anomaly_checkin(
         {"label": "Лень / не хочется", "action": "anomaly_lazy"},
         {"label": "Занят(а) сегодня", "action": "anomaly_busy"},
         {"label": "Само пройдёт", "action": "anomaly_dismiss", "primary": True},
-        {"label": "Почему?", "action": "why"},
     ]
     dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
     dialog.exec()

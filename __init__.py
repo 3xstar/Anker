@@ -83,6 +83,7 @@ def _default_deck_state() -> Dict[str, Any]:
             "anomaly_free_days": 0,
             "too_easy_days": 0,
         },
+        "last_summary_score": None,  # {"value": 7.3, "date": "2026-08-23"}
     }
 
 
@@ -224,11 +225,66 @@ def _daily_routine() -> None:
             ds["last_visit_day"] = today.isoformat()
             pending.append(("planned", deck_id, deck_name, decision, deck_metrics))
 
+        # Обновляем last_summary_score для сравнения в следующий раз
+        _update_summary_score(ds, deck_metrics, config, today)
+
     _save_state(state)
 
     # Показываем диалоги последовательно
     if pending:
         _show_dialog_queue(pending, 0, state, config, today)
+
+
+def _update_summary_score(
+    ds: Dict[str, Any],
+    deck_metrics: Dict[str, Any],
+    config: Dict[str, Any],
+    today: datetime.date,
+) -> None:
+    """
+    Вычисляет итоговую оценку (1-10) на основе метрик и весов,
+    сохраняет в состоянии колоды для сравнения при следующем показе.
+    """
+    weights = config.get("metric_weights", {})
+    # Пороги и направление — зеркало _METRIC_THRESHOLDS из html_builder
+    thresholds_map = {
+        "true_retention":        ([0.50, 0.70, 0.85, 0.95], False),
+        "new_card_retention":    ([0.50, 0.70, 0.85, 0.95], False),
+        "avg_difficulty":        ([3.0, 5.0, 7.0, 9.0], True),
+        "avg_stability":         ([3.0, 10.0, 20.0, 40.0], False),
+        "low_stability_ratio":   ([0.10, 0.20, 0.30, 0.40], True),
+        "actual_vs_predicted":   ([0.90, 1.10, 1.30, 1.50], True),
+        "avg_time_growth":       ([0.90, 1.10, 1.30, 1.50], True),
+        "consistency":           ([0.30, 0.50, 0.70, 0.90], False),
+        "relearning_stuck":      ([2.0, 5.0, 10.0, 20.0], True),
+    }
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for key, (thresholds, invert) in thresholds_map.items():
+        value = deck_metrics.get(key)
+        if value is None:
+            continue
+        weight = weights.get(key, 0.0)
+        if weight <= 0:
+            continue
+        idx = 0
+        for t in thresholds:
+            if value >= t:
+                idx += 1
+            else:
+                break
+        if invert:
+            idx = len(thresholds) - idx
+        normalized = idx / len(thresholds)
+        weighted_sum += normalized * weight
+        total_weight += weight
+
+    if total_weight > 0:
+        score = 1.0 + (weighted_sum / total_weight) * 9.0
+    else:
+        score = 5.0
+
+    ds["last_summary_score"] = {"value": round(score, 1), "date": today.isoformat()}
 
 
 def _should_show_planned_visit(
@@ -290,6 +346,7 @@ def _show_anomaly_flow(
         "decision_action": "hold",
         "is_anomaly": True,
         "metric_weights": config.get("metric_weights", {}),
+        "last_summary_score": ds.get("last_summary_score"),
     }
 
     def on_action(action: str) -> None:
@@ -397,6 +454,7 @@ def _show_planned_visit_flow(
         "is_stable": decision.is_stable_streak,
         "is_anomaly": False,
         "metric_weights": config.get("metric_weights", {}),
+        "last_summary_score": ds.get("last_summary_score"),
     }
 
     def on_action(action: str) -> None:
