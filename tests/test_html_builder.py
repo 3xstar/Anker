@@ -145,8 +145,7 @@ def test_day_picker_html_uses_anki_palette():
 def make_test_metrics():
     """Создаёт словарь метрик для тестов."""
     return {
-        "true_retention_7d": 0.82,
-        "true_retention_14d": 0.78,
+        "true_retention": 0.78,
         "new_card_retention": 0.75,
         "avg_difficulty": 5.5,
         "avg_stability": 8.0,
@@ -155,8 +154,8 @@ def make_test_metrics():
         "avg_time_growth": 1.05,
         "consistency": 0.65,
         "relearning_stuck": 4,
-        "daily_retention_14d": [("15.08", 0.80), ("16.08", 0.78)],
-        "daily_again_rate_14d": [("15.08", 0.10), ("16.08", 0.12)],
+        "daily_retention": [("15.08", 0.80), ("16.08", 0.78)],
+        "daily_again_rate": [("15.08", 0.10), ("16.08", 0.12)],
     }
 
 
@@ -181,8 +180,7 @@ def test_stats_tabbed_main_tab_multiple_metrics():
     """Вкладка «Главное» показывает несколько метрик, отсортированных по весу."""
     metrics = make_test_metrics()
     weights = {
-        "true_retention_14d": 0.10,
-        "true_retention_7d": 0.20,
+        "true_retention": 0.10,
         "new_card_retention": 0.20,
         "avg_difficulty": 0.05,
         "avg_stability": 0.05,

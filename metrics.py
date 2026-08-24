@@ -261,7 +261,9 @@ def collect_metrics(
         today = datetime.date.today()
 
     cutoff_hour = int(config.get("day_cutoff_hour", DEFAULT_DAY_CUTOFF_HOUR))
-    history_window_days = 30  # берём запас истории больше минимальных 7 дней
+    period = int(config.get("analysis_period_days", 7))
+    # Берём запас истории: 2× период + 7 дней на всякий случай
+    history_window_days = max(period * 2 + 7, 30)
 
     since_day = today - datetime.timedelta(days=history_window_days)
 
@@ -271,8 +273,7 @@ def collect_metrics(
     metrics: Dict[str, Any] = {
         "history_days": _count_history_days(revlog, today),
         "has_enough_history": False,
-        "true_retention_7d": None,
-        "true_retention_14d": None,
+        "true_retention": None,
         "new_card_retention": None,
         "button_ratio_young": None,
         "button_ratio_mature": None,
@@ -280,30 +281,29 @@ def collect_metrics(
         "avg_stability": None,
         "low_stability_ratio": None,
         "actual_vs_predicted": None,
-        "avg_time_per_card_7d": None,
+        "avg_time_per_card": None,
         "avg_time_growth": None,
         "consistency": None,
         "relearning_stuck": 0,
-        "daily_retention_14d": [],  # [(day_label, retention), ...] для sparkline
-        "daily_again_rate_14d": [],  # [(day_label, again_rate), ...]
+        "daily_retention": [],  # [(day_label, retention), ...] для sparkline
+        "daily_again_rate": [],  # [(day_label, again_rate), ...]
     }
 
-    # 1-2. True Retention (7 и 14 дней)
-    metrics["true_retention_7d"] = _retention_window(revlog, today, 7)
-    metrics["true_retention_14d"] = _retention_window(revlog, today, 14)
+    # 1. True Retention (единый период)
+    metrics["true_retention"] = _retention_window(revlog, today, period)
 
-    # 3. Retention по новым карточкам (впервые вышедшим из learning за 14 дней)
-    metrics["new_card_retention"] = _new_card_retention(revlog, today, 14)
+    # 2. Retention по новым карточкам
+    metrics["new_card_retention"] = _new_card_retention(revlog, today, period)
 
-    # 4. Соотношение кнопок (young/mature, 7 дней)
+    # 3. Соотношение кнопок (young/mature)
     metrics["button_ratio_young"] = _button_ratio_by_maturity(
-        revlog, today, 7, mature=False
+        revlog, today, period, mature=False
     )
     metrics["button_ratio_mature"] = _button_ratio_by_maturity(
-        revlog, today, 7, mature=True
+        revlog, today, period, mature=True
     )
 
-    # 5. Сложность и стабильность FSRS (graceful fallback на SM-2)
+    # 4. Сложность и стабильность FSRS (graceful fallback на SM-2)
     card_ids = [c["id"] for c in cards]
     fsrs = fetch_fsrs_memory_state(col, card_ids)
     if fsrs:
@@ -316,23 +316,23 @@ def collect_metrics(
             low_count = sum(1 for s in stabilities if s < LOW_STABILITY_DAYS)
             metrics["low_stability_ratio"] = low_count / len(stabilities)
 
-    # 6. Фактическая нагрузка vs теоретическая (рост числа повторений за неделю)
-    metrics["actual_vs_predicted"] = _actual_vs_predicted(revlog, today)
+    # 5. Фактическая нагрузка vs теоретическая (period vs предыдущий period)
+    metrics["actual_vs_predicted"] = _actual_vs_predicted(revlog, today, period)
 
-    # 8. Время на карточку (среднее за 7 дней и рост к предыдущим 7 дням)
-    metrics["avg_time_per_card_7d"], metrics["avg_time_growth"] = _time_per_card(
-        revlog, today
+    # 6. Время на карточку (period vs предыдущий period)
+    metrics["avg_time_per_card"], metrics["avg_time_growth"] = _time_per_card(
+        revlog, today, period
     )
 
-    # 9. Consistency нагрузки по дням (дисперсия review за 14 дней)
-    metrics["consistency"] = _consistency(revlog, today, 14)
+    # 7. Consistency нагрузки по дням
+    metrics["consistency"] = _consistency(revlog, today, period)
 
-    # 10. Застрявшие в переучивании (relearning > 2 за 14 дней)
-    metrics["relearning_stuck"] = _relearning_stuck(revlog, today, 14)
+    # 8. Застрявшие в переучивании
+    metrics["relearning_stuck"] = _relearning_stuck(revlog, today, period)
 
-    # 11. Дневные ряды для sparkline-графиков (кнопка «Почему?»)
-    metrics["daily_retention_14d"] = _daily_retention_series(revlog, today, 14)
-    metrics["daily_again_rate_14d"] = _daily_again_rate_series(revlog, today, 14)
+    # 9. Дневные ряды для sparkline-графиков
+    metrics["daily_retention"] = _daily_retention_series(revlog, today, period)
+    metrics["daily_again_rate"] = _daily_again_rate_series(revlog, today, period)
 
     metrics["has_enough_history"] = (
         metrics["history_days"] >= int(config.get("min_history_days", 7))
@@ -434,15 +434,15 @@ def _button_ratio_by_maturity(
 
 
 def _actual_vs_predicted(
-    revlog: Sequence[Dict[str, Any]], today: datetime.date
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, period: int
 ) -> Optional[float]:
     """
-    Отношение фактической нагрузки к «прогнозу». Упрощённая модель: сравниваем
-    число review за последние 7 дней с числом review за предыдущие 7 дней.
+    Отношение фактической нагрузки к «прогнозу». Сравниваем число review
+    за последние period дней с числом review за предыдущие period дней.
     Значение > 1 означает растущую нагрузку.
     """
-    recent_start = today - datetime.timedelta(days=7)
-    prev_start = today - datetime.timedelta(days=14)
+    recent_start = today - datetime.timedelta(days=period)
+    prev_start = today - datetime.timedelta(days=period * 2)
 
     recent = sum(
         1
@@ -462,14 +462,14 @@ def _actual_vs_predicted(
 
 
 def _time_per_card(
-    revlog: Sequence[Dict[str, Any]], today: datetime.date
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, period: int
 ) -> Tuple[Optional[float], Optional[float]]:
     """
-    Среднее время на карточку (в секундах) за последние 7 дней и рост
-    относительно предыдущих 7 дней (отношение).
+    Среднее время на карточку (в секундах) за последние period дней и рост
+    относительно предыдущих period дней (отношение).
     """
-    recent_start = today - datetime.timedelta(days=7)
-    prev_start = today - datetime.timedelta(days=14)
+    recent_start = today - datetime.timedelta(days=period)
+    prev_start = today - datetime.timedelta(days=period * 2)
 
     recent_times = [
         r["time"] / 1000.0

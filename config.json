@@ -1,8 +1,7 @@
 {
   "tracked_deck_ids": [],
   "metric_weights": {
-    "true_retention_7d": 0.20,
-    "true_retention_14d": 0.10,
+    "true_retention": 0.30,
     "new_card_retention": 0.20,
     "again_rate_young": 0.05,
     "again_rate_mature": 0.05,
@@ -31,7 +30,7 @@
   "anomaly_min_cards_today": 10,
   "anomaly_cooldown_days": 3,
   "light_mode_percent": 0.45,
-  "visit_frequency": "weekly",
+  "analysis_period_days": 7,
   "day_of_week_rules": {},
   "show_decision_log": false
 }

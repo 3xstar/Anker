@@ -23,8 +23,7 @@ import config as cfg
 def make_metrics(**overrides):
     """Создаёт словарь метрик с разумными значениями по умолчанию."""
     base = {
-        "true_retention_7d": 0.88,
-        "true_retention_14d": 0.87,
+        "true_retention": 0.87,
         "new_card_retention": 0.85,
         "button_ratio_young": {"again": 0.10, "hard": 0.30, "good": 0.50, "easy": 0.10},
         "button_ratio_mature": {"again": 0.08, "hard": 0.25, "good": 0.55, "easy": 0.12},
@@ -54,7 +53,7 @@ def make_config(**overrides):
 def test_extract_signals_basic():
     metrics = make_metrics()
     signals = de.extract_signals(metrics)
-    assert signals["true_retention_7d"] == 0.88
+    assert signals["true_retention"] == 0.88
     assert signals["again_rate_young"] == 0.10
     assert signals["again_rate_mature"] == 0.08
     assert signals["relearning_stuck"] == 3.0
@@ -70,13 +69,13 @@ def test_extract_signals_missing_button_ratio():
 # ── Тесты: normalize_signal ────────────────────────────────────────────────
 
 def test_normalize_retention_good():
-    assert de.normalize_signal("true_retention_7d", 1.0) == 1.0
-    assert de.normalize_signal("true_retention_7d", 0.85) == 0.0
-    assert de.normalize_signal("true_retention_7d", 0.70) == -1.0
+    assert de.normalize_signal("true_retention", 1.0) == 1.0
+    assert de.normalize_signal("true_retention", 0.85) == 0.0
+    assert de.normalize_signal("true_retention", 0.70) == -1.0
 
 
 def test_normalize_retention_none():
-    assert de.normalize_signal("true_retention_7d", None) == 0.0
+    assert de.normalize_signal("true_retention", None) == 0.0
 
 
 def test_normalize_again_rate():
@@ -127,14 +126,14 @@ def test_ema_update_smooth():
 
 
 def test_apply_ema():
-    signals = {"true_retention_7d": 0.9, "again_rate_young": 0.15}
-    prev = {"true_retention_7d": 0.85, "again_rate_young": 0.12}
+    signals = {"true_retention": 0.9, "again_rate_young": 0.15}
+    prev = {"true_retention": 0.85, "again_rate_young": 0.12}
     smoothed, new_ema = de.apply_ema(signals, prev, 7)
-    assert "true_retention_7d" in smoothed
+    assert "true_retention" in smoothed
     assert "again_rate_young" in smoothed
     # Проверяем, что значения изменились в сторону новых
-    assert smoothed["true_retention_7d"] > 0.85
-    assert smoothed["true_retention_7d"] < 0.9
+    assert smoothed["true_retention"] > 0.85
+    assert smoothed["true_retention"] < 0.9
 
 
 # ── Тесты: compute_load_score ──────────────────────────────────────────────
@@ -151,8 +150,7 @@ def test_load_score_neutral():
 def test_load_score_overloaded():
     """При плохих метриках Load Score должен быть отрицательным."""
     metrics = make_metrics(
-        true_retention_7d=0.60,
-        true_retention_14d=0.65,
+        true_retention=0.60,
         new_card_retention=0.55,
         button_ratio_young={"again": 0.35, "hard": 0.30, "good": 0.30, "easy": 0.05},
         button_ratio_mature={"again": 0.30, "hard": 0.30, "good": 0.35, "easy": 0.05},
@@ -172,8 +170,7 @@ def test_load_score_overloaded():
 def test_load_score_underloaded():
     """При отличных метриках Load Score должен быть положительным."""
     metrics = make_metrics(
-        true_retention_7d=0.95,
-        true_retention_14d=0.94,
+        true_retention=0.95,
         new_card_retention=0.93,
         button_ratio_young={"again": 0.03, "hard": 0.20, "good": 0.60, "easy": 0.17},
         button_ratio_mature={"again": 0.02, "hard": 0.18, "good": 0.60, "easy": 0.20},
@@ -237,8 +234,7 @@ def test_decide_hold_neutral():
 
 def test_decide_increase():
     metrics = make_metrics(
-        true_retention_7d=0.96,
-        true_retention_14d=0.95,
+        true_retention=0.96,
         new_card_retention=0.94,
         button_ratio_young={"again": 0.02, "hard": 0.18, "good": 0.60, "easy": 0.20},
         button_ratio_mature={"again": 0.01, "hard": 0.15, "good": 0.60, "easy": 0.24},
@@ -258,8 +254,7 @@ def test_decide_increase():
 
 def test_decide_decrease():
     metrics = make_metrics(
-        true_retention_7d=0.55,
-        true_retention_14d=0.60,
+        true_retention=0.55,
         new_card_retention=0.50,
         button_ratio_young={"again": 0.40, "hard": 0.30, "good": 0.25, "easy": 0.05},
         button_ratio_mature={"again": 0.35, "hard": 0.30, "good": 0.30, "easy": 0.05},
@@ -280,8 +275,7 @@ def test_decide_decrease():
 def test_decide_cooldown():
     """При активном cooldown решение должно быть hold."""
     metrics = make_metrics(
-        true_retention_7d=0.96,
-        true_retention_14d=0.95,
+        true_retention=0.96,
         new_card_retention=0.94,
         button_ratio_young={"again": 0.02, "hard": 0.18, "good": 0.60, "easy": 0.20},
         button_ratio_mature={"again": 0.01, "hard": 0.15, "good": 0.60, "easy": 0.24},
@@ -310,8 +304,7 @@ def test_decide_not_enough_history():
 def test_decide_hard_floor():
     """Лимит не должен падать ниже hard_floor."""
     metrics = make_metrics(
-        true_retention_7d=0.30,
-        true_retention_14d=0.35,
+        true_retention=0.30,
         new_card_retention=0.25,
         button_ratio_young={"again": 0.60, "hard": 0.20, "good": 0.15, "easy": 0.05},
         button_ratio_mature={"again": 0.55, "hard": 0.20, "good": 0.20, "easy": 0.05},

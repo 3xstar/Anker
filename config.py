@@ -32,8 +32,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     #   - Consistency — стабильность привычки (0.03).
     #   - Застрявшие в переучивании — сигнал проблемных карточек (0.02).
     "metric_weights": {
-        "true_retention_7d": 0.20,
-        "true_retention_14d": 0.10,
+        "true_retention": 0.30,
         "new_card_retention": 0.20,
         "again_rate_young": 0.05,
         "again_rate_mature": 0.05,
@@ -99,9 +98,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Процент от текущего new.perDay при включении лёгкого режима.
     "light_mode_percent": 0.45,
 
-    # ── Периодичность планового визита ──
-    # Варианты: "weekly", "every_3_days", "biweekly", "monthly"
-    "visit_frequency": "weekly",
+    # ── Периодичность ──
+    # Единый период анализа в днях (1-30). Определяет одновременно:
+    # (1) как часто Anker проверяет статистику (частота визитов),
+    # (2) за какой промежуток эта статистика считается.
+    "analysis_period_days": 7,
 
     # ── Повторяющиеся правила по дням недели ──
     # Ключ — ISO день недели (1=Пн, ..., 7=Вс).

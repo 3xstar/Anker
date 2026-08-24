@@ -72,7 +72,7 @@ def normalize_signal(key: str, value: Optional[float]) -> float:
         return 0.0
 
     # ── Метрики «чем выше, тем лучше» ──
-    if key in ("true_retention_7d", "true_retention_14d", "new_card_retention"):
+    if key in ("true_retention", "new_card_retention"):
         # reference = 0.85 (85% retention — нейтрально)
         # scale = 0.15 (100% → +1, 70% → -1)
         return _clip((value - 0.85) / 0.15)
@@ -126,8 +126,7 @@ def extract_signals(metrics: Dict[str, Any]) -> Dict[str, Optional[float]]:
 
     # Прямые скалярные метрики
     for key in (
-        "true_retention_7d",
-        "true_retention_14d",
+        "true_retention",
         "new_card_retention",
         "avg_difficulty",
         "avg_stability",
@@ -264,16 +263,14 @@ def compute_step(
     # Базовый шаг: процент от текущего лимита, масштабированный |Load Score|
     base_step = current_limit * max_percent * abs(load_score) * aggressiveness
 
-    # Учёт скорости падения метрик: если 7d retention заметно ниже 14d,
-    # увеличиваем агрессивность (резкое падение → быстрее реагируем).
+    # Учёт скорости падения метрик: если retention ниже порога,
+    # увеличиваем агрессивность.
     momentum_mult = 1.0
     if metrics:
-        ret_7d = metrics.get("true_retention_7d")
-        ret_14d = metrics.get("true_retention_14d")
-        if ret_7d is not None and ret_14d is not None and ret_14d > 0:
-            drop = (ret_14d - ret_7d) / ret_14d
-            if drop > 0.05:  # падение больше 5% относительных
-                momentum_mult = 1.0 + min(drop * 10, 1.0)  # до 2x агрессивнее
+        ret = metrics.get("true_retention")
+        if ret is not None and ret < 0.75:
+            drop = (0.85 - ret) / 0.85
+            momentum_mult = 1.0 + min(drop * 5, 1.0)  # до 2x агрессивнее
 
     step = max(min_step, round(base_step * momentum_mult))
     # Не больше 50% текущего лимита за раз (дополнительная защита)

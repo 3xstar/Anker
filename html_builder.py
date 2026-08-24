@@ -57,8 +57,6 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: 100vh;
     padding: 20px;
   }
 
@@ -589,8 +587,7 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
 
 # (key, name, explain_fn, suffix, daily_series_key, color)
 _MAIN_METRIC_DEFS: List[tuple] = [
-    ("true_retention_14d", "Вспоминаемость", _retention_explanation, "%", "daily_retention_14d", "#0078d4"),
-    ("true_retention_7d", "Вспоминаемость (7 дн.)", _retention_explanation, "%", None, "#0078d4"),
+    ("true_retention", "Вспоминаемость", _retention_explanation, "%", "daily_retention", "#0078d4"),
     ("new_card_retention", "Новые карточки", _new_card_retention_explanation, "%", None, "#107c10"),
     ("avg_difficulty", "Средняя сложность", _difficulty_explanation, "", None, "#d13438"),
     ("avg_stability", "Средняя стабильность", _stability_explanation, " дн.", None, "#0078d4"),
@@ -649,7 +646,7 @@ def _build_main_tab_content(
                         f"Доля ошибок ({'новые' if maturity == 'young' else 'зрелые'})",
                         _again_rate_explanation,
                         "%",
-                        "daily_again_rate_14d",
+                        "daily_again_rate",
                         "#d13438",
                         again,
                     ))
@@ -685,8 +682,7 @@ def _build_main_tab_content(
 def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
-        ("Вспоминаемость (7 дн.)", "true_retention_7d", _retention_explanation, "%", None),
-        ("Вспоминаемость (14 дн.)", "true_retention_14d", _retention_explanation, "%", "daily_retention_14d"),
+        ("Вспоминаемость", "true_retention", _retention_explanation, "%", "daily_retention"),
         ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%", None),
         ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "", None),
         ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.", None),
@@ -698,7 +694,7 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
     ]
 
     parts = [
-        '<div class="stats-note">Показатели ниже — за последние 7–14 дней, а не за всё время. Поэтому они могут отличаться от общей статистики в Anki (Stats).</div>',
+        '<div class="stats-note">Показатели ниже — за последние дни (период анализа), а не за всё время. Поэтому они могут отличаться от общей статистики в Anki (Stats).</div>',
         '<div class="all-metrics">',
     ]
     for name, key, explain_fn, suffix, daily_key in rows_def:

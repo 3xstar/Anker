@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # При импорте вне Anki (например, pytest) модуль не падает.
 try:
     from aqt import gui_hooks, mw
-    from aqt.qt import QAction, QMenu, QTimer
+    from aqt.qt import QAction, QDialog, QDialogButtonBox, QLabel, QMenu, QSpinBox, QTimer, QVBoxLayout
     from aqt.utils import showInfo, tooltip
     _ANKI_AVAILABLE = True
 except ImportError:
@@ -42,12 +42,6 @@ from . import deck_selector
 # ── Константы ──────────────────────────────────────────────────────────────
 
 STATE_KEY = "anker_adaptive_load_state"
-FREQUENCY_DAYS = {
-    "every_3_days": 3,
-    "weekly": 7,
-    "biweekly": 14,
-    "monthly": 30,
-}
 
 
 # ── Управление состоянием ──────────────────────────────────────────────────
@@ -186,8 +180,8 @@ def _daily_routine() -> None:
         # Streaks
         streaks = ds.setdefault("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
         too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
-        ret_14d = deck_metrics.get("true_retention_14d")
-        if ret_14d is not None and ret_14d > too_easy_threshold:
+        ret = deck_metrics.get("true_retention")
+        if ret is not None and ret > too_easy_threshold:
             streaks["too_easy_days"] = streaks.get("too_easy_days", 0) + 1
         else:
             streaks["too_easy_days"] = 0
@@ -241,8 +235,7 @@ def _should_show_planned_visit(
     ds: Dict[str, Any], config: Dict[str, Any], today: datetime.date
 ) -> bool:
     """Проверяет, пора ли показать плановый визит для конкретной колоды."""
-    frequency = config.get("visit_frequency", "weekly")
-    interval_days = FREQUENCY_DAYS.get(frequency, 7)
+    interval_days = int(config.get("analysis_period_days", 7))
     last_visit = _parse_date(ds.get("last_visit_day"))
     if last_visit is None:
         return True
@@ -486,6 +479,11 @@ def _add_menu_item() -> None:
 
     anker_menu = menu.addMenu("Anker")
 
+    # Настройки
+    settings_action = QAction("Настройки…", mw)
+    settings_action.triggered.connect(_on_settings)
+    anker_menu.addAction(settings_action)
+
     # Выбор колод
     select_action = QAction("Выбрать колоды…", mw)
     select_action.triggered.connect(_on_select_decks)
@@ -505,6 +503,38 @@ def _add_menu_item() -> None:
     reset_action = QAction("Сбросить состояние", mw)
     reset_action.triggered.connect(_on_reset_state)
     anker_menu.addAction(reset_action)
+
+
+def _on_settings() -> None:
+    """Диалог настроек Anker: период анализа."""
+    config = mw.addonManager.getConfig(__name__) or {}
+    period = int(config.get("analysis_period_days", 7))
+
+    dlg = QDialog(mw)
+    dlg.setWindowTitle("Anker — настройки")
+    dlg.setMinimumWidth(360)
+    layout = QVBoxLayout(dlg)
+
+    label = QLabel("Период анализа (дней):\nОпределяет, как часто Anker проверяет статистику\nи за какой промежуток она считается.")
+    label.setWordWrap(True)
+    layout.addWidget(label)
+
+    spin = QSpinBox()
+    spin.setRange(1, 30)
+    spin.setValue(period)
+    spin.setSuffix(" дн.")
+    layout.addWidget(spin)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    layout.addWidget(buttons)
+
+    if dlg.exec():
+        new_period = spin.value()
+        config["analysis_period_days"] = new_period
+        mw.addonManager.writeConfig(__name__, config)
+        tooltip(f"Anker: период анализа — {new_period} дн.")
 
 
 def _on_select_decks() -> None:
@@ -548,7 +578,7 @@ def _on_force_analysis() -> None:
 def _force_analysis() -> None:
     """
     Выполняет полный расчётный путь для каждой колоды отдельно,
-    в обход visit_frequency и cooldown, но с сохранением проверки
+    в обход расписания и cooldown, но с сохранением проверки
     min_history_days.
     """
     today = datetime.date.today()
@@ -598,9 +628,9 @@ def _force_analysis() -> None:
 
         streaks = ds.get("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
         too_easy_threshold = float(config.get("too_easy_retention_threshold", 0.90))
-        ret_14d = deck_metrics.get("true_retention_14d")
+        ret = deck_metrics.get("true_retention")
         too_easy_days = streaks.get("too_easy_days", 0)
-        if ret_14d is not None and ret_14d > too_easy_threshold:
+        if ret is not None and ret > too_easy_threshold:
             too_easy_days += 1
         else:
             too_easy_days = 0
