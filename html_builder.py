@@ -20,7 +20,7 @@ html_builder.py — чистая генерация HTML для диалогов
 
 import base64
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # ── Пути к изображениям ────────────────────────────────────────────────────
@@ -846,19 +846,22 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _build_summary_tab_content(
+def _score_components(
     metrics: Dict[str, Any],
-    metric_weights: Dict[str, float] | None,
-    last_summary_score: Dict[str, Any] | None,
-) -> str:
-    """Собирает HTML для вкладки «Итог» — оценка 1-10 + сравнение с прошлым."""
+    metric_weights: Dict[str, float] | None = None,
+) -> Tuple[float, List[Tuple[str, float, float]]]:
+    """
+    Возвращает (score, [(metric_key, normalized, weight), ...]).
+
+    score — итоговая оценка 1-10; normalized — положение значения метрики
+    на шкале 0..1 (0 = плохо, 1 = хорошо). Единый расчёт используется и для
+    оценки на вкладке «Итог», и для блока рекомендаций.
+    """
     if metric_weights is None:
         metric_weights = {}
-
-    # Расчёт оценки: нормализуем каждую доступную метрику в 0-1,
-    # взвешиваем, масштабируем в 1-10
     total_weight = 0.0
     weighted_sum = 0.0
+    scored: List[Tuple[str, float, float]] = []
     for key, (thresholds, invert) in _METRIC_THRESHOLDS.items():
         value = metrics.get(key)
         if value is None:
@@ -866,7 +869,6 @@ def _build_summary_tab_content(
         weight = metric_weights.get(key, 0.0)
         if weight <= 0:
             continue
-        # Нормализация: где находится значение среди порогов (0..len(thresholds))
         idx = 0
         for t in thresholds:
             if value >= t:
@@ -875,27 +877,60 @@ def _build_summary_tab_content(
                 break
         if invert:
             idx = len(thresholds) - idx
-        normalized = idx / len(thresholds)  # 0..1
+        normalized = idx / len(thresholds)
         weighted_sum += normalized * weight
         total_weight += weight
+        scored.append((key, normalized, weight))
 
-    if total_weight > 0:
-        score = 1.0 + (weighted_sum / total_weight) * 9.0  # 1..10
-    else:
-        score = 5.0
+    score = 1.0 + (weighted_sum / total_weight) * 9.0 if total_weight > 0 else 5.0
+    return score, scored
+
+
+def compute_summary_score(
+    metrics: Dict[str, Any],
+    metric_weights: Dict[str, float] | None = None,
+) -> float:
+    """Итоговая оценка 1-10 по метрикам и их весам (для выбора лица маскота)."""
+    score, _ = _score_components(metrics, metric_weights)
+    return score
+
+
+def summary_image_for_score(score: float) -> str:
+    """Имя файла изображения персонажа по итоговой оценке 1-10."""
+    if score < 3.0:
+        return "sad.png"
+    if score < 5.0:
+        return "worried.png"
+    if score < 7.0:
+        return "neutral.png"
+    if score < 8.5:
+        return "enthusiastic.png"
+    return "prouded.png"
+
+
+def _build_summary_tab_content(
+    metrics: Dict[str, Any],
+    metric_weights: Dict[str, float] | None,
+    last_summary_score: Dict[str, Any] | None,
+) -> str:
+    """Собирает HTML для вкладки «Итог» — оценка 1-10 + сравнение с прошлым."""
+    score, scored = _score_components(metrics, metric_weights)
 
     score_display = f"{score:.1f}"
     score_color = _grade_color(score / 10.0, [0.3, 0.5, 0.7, 0.9], _GRADE_COLORS, False)
 
-    # Комментарий по диапазону
-    if score < 4.0:
-        comment = "Сейчас непростой период, но это временно. Продолжай — каждый день делает тебя сильнее!"
-    elif score < 6.0:
-        comment = "Держишься уверенно. Есть над чем поработать, но ты на верном пути."
-    elif score < 8.0:
-        comment = "Хороший ритм! Материал усваивается стабильно, продолжай в том же духе."
+    # Комментарий по диапазону — описывает только текущее состояние,
+    # без намёков на тренд (тренд покрывает блок сравнения с прошлым ниже).
+    if score < 3.0:
+        comment = "Сейчас тебе непросто — материал плохо закрепляется, и это чувствуется. Ничего страшного, бывает у всех. Стоит притормозить и меньше нагружать себя, пока не наверстаешь."
+    elif score < 5.0:
+        comment = "Результаты сейчас ниже обычного — часть материала выветривается быстрее, чем хотелось бы. Стоит немного сбавить темп и уделить время повторению того, что уже проходил."
+    elif score < 7.0:
+        comment = "Ты держишься в целом нормально — ничего критичного, но и без большого запаса прочности. Есть куда расти, если добавить чуть больше внимания к повторениям."
+    elif score < 8.5:
+        comment = "У тебя хорошо получается — материал закрепляется уверенно, сбоев почти нет. Продолжай в том же духе."
     else:
-        comment = "Отличный результат! Ты на высоте — материал закрепляется надёжно и легко."
+        comment = "Отличный результат — ты закрепляешь материал очень уверенно и стабильно. Можно даже немного ускориться, если хочется двигаться быстрее."
 
     # Сравнение с прошлым
     compare_html = ""

@@ -18,6 +18,8 @@ from .html_builder import (
     build_day_picker_html,
     build_stats_tabbed_html,
     build_sparkline_svg,
+    compute_summary_score,
+    summary_image_for_score,
     DEFAULT_THEME_COLORS,
     _retention_explanation,
     _again_rate_explanation,
@@ -195,8 +197,12 @@ class MascotDialog(QDialog):
         is_anomaly = ctx.get("is_anomaly", False)
         is_stable = ctx.get("is_stable", False)
 
-        # Выбираем изображение под характер данных
-        if decision_action == "decrease":
+        # Выбираем изображение: на вкладке «Итог» — по самой оценке,
+        # на остальных вкладках — по решению движка / характеру данных.
+        if tab == "summary":
+            score = compute_summary_score(metrics, ctx.get("metric_weights"))
+            image = summary_image_for_score(score)
+        elif decision_action == "decrease":
             image = IMG_SAD
         elif decision_action == "increase":
             image = IMG_ENTHUSIASTIC
