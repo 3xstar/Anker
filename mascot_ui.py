@@ -289,7 +289,7 @@ def show_planned_visit(
     if decision.action == "increase":
         image = IMG_ENTHUSIASTIC
         message = (
-            f"«{deck_name}» усваивается уверенно — "
+            f"Ты уверенно справляешься с колодой «{deck_name}» — "
             f"можно немного ускориться и добавить новых карточек."
         )
         buttons = [
@@ -299,8 +299,9 @@ def show_planned_visit(
     elif decision.action == "decrease":
         image = IMG_UNDERSTANDING
         message = (
-            f"Колоде «{deck_name}» в последнее время тяжело даются повторения. "
-            f"Есть смысл ненадолго снизить количество новых карточек."
+            f"Тебе в последнее время нелегко даются повторения колоды «{deck_name}». "
+            f"Есть смысл ненадолго снизить количество новых карточек, "
+            f"чтобы закрепить то, что уже выучено."
         )
         buttons = [
             {"label": "Да, давай снизим", "action": "decrease_accept", "primary": True},
@@ -309,8 +310,8 @@ def show_planned_visit(
     elif is_stable:
         image = IMG_PROUDED
         message = (
-            f"Всё стабильно с колодой «{deck_name}» — "
-            f"продолжаем в том же темпе."
+            f"Ты стабильно хорошо закрепляешь материал колоды «{deck_name}» — "
+            f"и уже не первую неделю. Не расслабляйся, но темп отличный!"
         )
         buttons = [
             {"label": "Спасибо!", "action": "prouded_ack", "primary": True},
@@ -318,8 +319,7 @@ def show_planned_visit(
     else:
         image = IMG_NEUTRAL
         message = (
-            f"Всё стабильно с колодой «{deck_name}» — "
-            f"продолжаем в том же темпе."
+            f"У тебя всё ровно с колодой «{deck_name}» — продолжай в своём темпе."
         )
         buttons = [
             {"label": "Хорошо", "action": "neutral_ack", "primary": True},
@@ -337,8 +337,7 @@ def show_anomaly_checkin(
     """Показывает anomaly check-in диалог. Изображение: worried.png."""
     image = IMG_WORRIED
     message = (
-        f"Сегодня заметно тяжелее обычного с «{deck_name}». "
-        f"Что случилось?"
+        f"Сегодня тебе явно тяжелее обычного даётся «{deck_name}». Что случилось?"
     )
     buttons = [
         {"label": "Лень / не хочется", "action": "anomaly_lazy"},
@@ -356,8 +355,9 @@ def show_anomaly_lazy(
     """Реакция на «Лень / не хочется»: sad.png, предложение лёгкого режима."""
     image = IMG_SAD
     message = (
-        f"Бывает. Давай включим временный лёгкий режим для «{deck_name}»? "
-        f"Я снижу количество новых карточек, а через несколько дней всё вернётся."
+        f"Бывает у всех, не переживай. Давай включим для тебя временный лёгкий "
+        f"режим по «{deck_name}» — я ненадолго снижу количество новых карточек, "
+        f"а потом всё вернётся как было."
     )
     buttons = [
         {"label": "Лёгкий режим на 3 дня", "action": "light_3d", "primary": True},
@@ -376,7 +376,8 @@ def show_anomaly_busy(
     """Реакция на «Занят(а) сегодня»: understanding.png, выбор дней недели."""
     image = IMG_UNDERSTANDING
     message = (
-        f"Понимаю. Хочешь настроить дни без новых карточек для «{deck_name}»?"
+        f"Понимаю, бывают такие дни. Хочешь, я настрою для тебя дни недели "
+        f"без новых карточек по «{deck_name}»?"
     )
     buttons = [
         {"label": "Настроить дни недели", "action": "busy_setup_days", "primary": True},
@@ -415,7 +416,8 @@ def show_day_of_week_picker(
         )
 
     message = (
-        f"В какие дни недели снижать новые карточки для «{deck_name}»?"
+        f"В какие дни тебе обычно не до новых карточек по «{deck_name}»? "
+        f"Отметь их — я подстроюсь."
     )
 
     colors = _get_theme_colors()
