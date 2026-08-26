@@ -261,7 +261,9 @@ def collect_metrics(
         today = datetime.date.today()
 
     cutoff_hour = int(config.get("day_cutoff_hour", DEFAULT_DAY_CUTOFF_HOUR))
-    period = int(config.get("analysis_period_days", 7))
+    # Период анализа не может быть меньше 2 дней — иначе графикам не хватает
+    # точек для построения динамики.
+    period = max(2, int(config.get("analysis_period_days", 7)))
     # Берём запас истории: 2× период + 7 дней на всякий случай
     history_window_days = max(period * 2 + 7, 30)
 

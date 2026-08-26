@@ -578,7 +578,7 @@ def _on_settings() -> None:
     layout.addWidget(label)
 
     spin = QSpinBox()
-    spin.setRange(1, 30)
+    spin.setRange(2, 30)
     spin.setValue(period)
     spin.setSuffix(" дн.")
     layout.addWidget(spin)

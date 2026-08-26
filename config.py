@@ -141,6 +141,9 @@ def get_config(addon_manager=None, module_name: str = "") -> Dict[str, Any]:
                 _deep_update(config, user_config)
         except Exception:
             pass
+    # Защита от старых сохранённых конфигов: период анализа не может быть
+    # меньше 2 дней (меньше — не хватает точек для графиков динамики).
+    config["analysis_period_days"] = max(2, int(config.get("analysis_period_days", 7)))
     return config
 
 
