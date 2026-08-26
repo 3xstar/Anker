@@ -415,3 +415,100 @@ def test_metric_color_retention():
 def test_metric_color_difficulty():
     # Высокая сложность = плохо → красный
     assert hb._metric_color("avg_difficulty", 8.0) == "#e8833a"
+
+
+# ── Тесты: compute_summary_score ──────────────────────────────────────────
+
+def test_compute_summary_score_no_weights_returns_mid():
+    assert hb.compute_summary_score(make_test_metrics(), {}) == 5.0
+
+
+def test_compute_summary_score_with_weights():
+    metrics = {
+        "true_retention": 0.90,
+        "avg_difficulty": 2.0,
+    }
+    weights = {"true_retention": 0.5, "avg_difficulty": 0.5}
+    score = hb.compute_summary_score(metrics, weights)
+    assert 8.0 <= score <= 10.0
+
+
+# ── Тесты: summary_image_for_score ────────────────────────────────────────
+
+def test_summary_image_for_score_ranges():
+    assert hb.summary_image_for_score(1.5) == "sad.png"
+    assert hb.summary_image_for_score(2.9) == "sad.png"
+    assert hb.summary_image_for_score(3.0) == "worried.png"
+    assert hb.summary_image_for_score(4.9) == "worried.png"
+    assert hb.summary_image_for_score(5.0) == "neutral.png"
+    assert hb.summary_image_for_score(6.9) == "neutral.png"
+    assert hb.summary_image_for_score(7.0) == "enthusiastic.png"
+    assert hb.summary_image_for_score(8.4) == "enthusiastic.png"
+    assert hb.summary_image_for_score(8.5) == "prouded.png"
+    assert hb.summary_image_for_score(10.0) == "prouded.png"
+
+
+# ── Тесты: комментарий на вкладке «Итог» ──────────────────────────────────
+
+def test_summary_comment_uses_new_personal_tone():
+    # Без весов score = 5.0 → нейтральный комментарий без намёков на «верный путь».
+    html = hb.build_stats_tabbed_html(
+        metrics=make_test_metrics(),
+        decision_action="decrease",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="sad.png",
+    )
+    assert "Ты держишься в целом нормально" in html
+    assert "на верном пути" not in html
+
+
+# ── Тесты: блок рекомендаций ─────────────────────────────────────────────
+
+def test_summary_recommendations_present_when_weak():
+    metrics = make_test_metrics()
+    weights = {
+        "true_retention": 0.30,
+        "new_card_retention": 0.20,
+        "avg_difficulty": 0.05,
+        "avg_stability": 0.05,
+        "low_stability_ratio": 0.05,
+        "actual_vs_predicted": 0.05,
+        "avg_time_growth": 0.05,
+        "consistency": 0.03,
+        "relearning_stuck": 0.02,
+    }
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+        metric_weights=weights,
+    )
+    assert "Что можно улучшить" in html
+    assert "summary-recommendations" in html
+    # avg_stability в make_test_metrics = 8.0 → normalized < 0.5
+    assert hb._RECOMMENDATION_TEXTS["avg_stability"] in html
+
+
+def test_summary_recommendations_absent_when_all_good():
+    metrics = {
+        "true_retention": 0.95,
+        "avg_stability": 20.0,
+        "consistency": 0.9,
+    }
+    weights = {"true_retention": 0.5, "avg_stability": 0.3, "consistency": 0.2}
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+        metric_weights=weights,
+    )
+    assert "Что можно улучшить" not in html
+    assert "Явных слабых мест не видно" in html
