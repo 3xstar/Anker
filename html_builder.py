@@ -581,6 +581,11 @@ __CSS__
   .summary-score { font-size:48px; font-weight:800; margin:8px 0; }
   .summary-comment { font-size:14px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
   .summary-compare { font-size:12px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
+  .summary-recommendations { margin:12px 16px; text-align:left; }
+  .summary-recommendations-title { font-size:13px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:6px; }
+  .summary-recommendations-list { padding-left:18px; margin:0; }
+  .summary-recommendations-list li { font-size:12px; color:__TEXT_COLOR__; line-height:1.4; margin-bottom:4px; }
+  .summary-recommendations-empty { font-size:12px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
   /* Экран статистики — шире, чем простой диалог */
   .stats-screen .bubble-wrapper { max-width:520px; }
   .stats-screen .bottom-area { max-width:520px; }
@@ -655,6 +660,21 @@ _METRIC_THRESHOLDS: Dict[str, tuple] = {
     "relearning_stuck":      ([2.0, 5.0, 10.0, 20.0], True),
     "again_rate_young":      ([0.05, 0.10, 0.20, 0.30], True),
     "again_rate_mature":     ([0.05, 0.10, 0.20, 0.30], True),
+}
+
+
+# Готовые формулировки рекомендаций по метрикам (пункт 6 ТЗ).
+# Ключ совпадает с ключом метрики в _METRIC_THRESHOLDS.
+_RECOMMENDATION_TEXTS: Dict[str, str] = {
+    "true_retention": "Уделяй чуть больше внимания повторениям — вспоминаемость сейчас ниже, чем хотелось бы.",
+    "new_card_retention": "Не спеши добавлять много новых карточек сразу — дай свежим словам закрепиться получше.",
+    "avg_difficulty": "Многие карточки объективно трудные — попробуй снизить темп добавления новых на время.",
+    "avg_stability": "Часть материала пока нестабильна в памяти — не лишним будет вернуться к нему через повторение.",
+    "low_stability_ratio": "Заметная доля карточек ещё не закрепилась прочно — им нужно больше времени и внимания.",
+    "actual_vs_predicted": "Нагрузка ощутимо выше, чем задумано, — стоит пересмотреть лимит новых карточек.",
+    "avg_time_growth": "На карточки уходит больше времени, чем раньше, — возможно, стоит сделать паузу или снизить темп.",
+    "consistency": "Занятия проходят нерегулярно — постарайся заниматься примерно в одном ритме, это помогает лучше запоминать.",
+    "relearning_stuck": "Немало карточек застряло в переучивании — стоит отдельно поработать именно над ними.",
 }
 
 
@@ -944,6 +964,33 @@ def _build_summary_tab_content(
         else:
             compare_html = f"Держится примерно на том же уровне (было {prev:.1f}/10)"
 
+    # Блок рекомендаций: топ-3 худших метрик (normalized < 0.5), отсортированных
+    # по весу × насколько далеки от хорошего значения.
+    weak = [
+        (key, normalized, weight)
+        for key, normalized, weight in scored
+        if normalized < 0.5 and key in _RECOMMENDATION_TEXTS
+    ]
+    weak.sort(key=lambda x: x[2] * (0.5 - x[1]), reverse=True)
+    weak = weak[:3]
+
+    if weak:
+        items = "\n".join(
+            f"<li>{_RECOMMENDATION_TEXTS[key]}</li>" for key, _, _ in weak
+        )
+        recommendations_html = (
+            '<div class="summary-recommendations">'
+            '<div class="summary-recommendations-title">Что можно улучшить</div>'
+            f'<ul class="summary-recommendations-list">{items}</ul>'
+            '</div>'
+        )
+    else:
+        recommendations_html = (
+            '<div class="summary-recommendations-empty">'
+            'Явных слабых мест не видно — можно просто продолжать в том же духе.'
+            '</div>'
+        )
+
     parts = [
         '<div class="summary-tab-content">',
         '<div class="stats-container">',
@@ -952,6 +999,7 @@ def _build_summary_tab_content(
     ]
     if compare_html:
         parts.append(f'<div class="summary-compare">{compare_html}</div>')
+    parts.append(recommendations_html)
     parts.append('</div>')
     parts.append('</div>')
     return "\n".join(parts)
