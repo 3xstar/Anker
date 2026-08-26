@@ -134,13 +134,13 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   .btn {
     display: block;
     width: 100%;
-    padding: 10px 14px;
-    font-size: 14px;
+    padding: 12px 16px;
+    font-size: 26px;
     font-family: inherit;
     color: #1f1f23;
     background: #ffffff;
     border: 1px solid #c8c8ce;
-    border-radius: 14px;
+    border-radius: 16px;
     cursor: pointer;
     text-align: center;
     transition: background 0.15s;
@@ -163,8 +163,8 @@ SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
   .stats-link-row { text-align:center; margin-top:4px; }
   .btn-link {
     background:none; border:none; color:#ffffff;
-    font-size:15px; font-weight:600; font-family:inherit;
-    cursor:pointer; padding:8px 16px;
+    font-size:28px; font-weight:600; font-family:inherit;
+    cursor:pointer; padding:10px 16px;
     text-decoration:underline; transition:opacity 0.15s;
   }
   .btn-link:hover { opacity:0.85; }
