@@ -559,7 +559,11 @@ __CSS__
   .metric-value { font-size:36px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:4px; }
   .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
     line-height:1.45; margin:8px 16px; }
-  .all-metrics { text-align:left; max-height:280px; overflow-y:auto; }
+  .all-metrics { text-align:left; }
+  /* Внутренний скролл содержимого вкладки: окно фиксировано, поэтому
+     длинный контент (несколько развёрнутых показателей) скроллится только
+     внутри, не растягивая окно. */
+  .tab-content-scroll { max-height:280px; overflow-y:auto; }
   .stats-note { font-size:11px; color:__TEXT_COLOR__; opacity:0.55;
     padding:4px 0 8px 0; line-height:1.35; }
   .metric-row { display:flex; justify-content:space-between; align-items:center;
@@ -595,7 +599,7 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
         <button class="tab-btn __TAB_ALL_ACTIVE__"
          onclick="pycmd('anker:stats_tab_all')">Все показатели</button>
       </div>
-      __TAB_CONTENT__
+      <div class="tab-content-scroll">__TAB_CONTENT__</div>
     </div>
   </div>
   <div class="bottom-area">

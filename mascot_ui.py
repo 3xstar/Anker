@@ -28,7 +28,6 @@ try:
     from aqt import mw
     from aqt.qt import (
         QDialog,
-        QTimer,
         QVBoxLayout,
         Qt,
         QSizePolicy,
@@ -39,7 +38,6 @@ except ImportError:
     _ANKI_AVAILABLE = False
     # Заглушки для импорта вне Anki (например, в тестах)
     QDialog = object
-    QTimer = object
     QVBoxLayout = object
     Qt = object
     QSizePolicy = object
@@ -101,6 +99,16 @@ IMG_ENTHUSIASTIC = "enthusiastic.png"
 IMG_PROUDED = "prouded.png"
 
 
+# ── Фиксированные размеры окон (пункт 1 ТЗ) ────────────────────────────────
+
+# Размеры подобраны под самый длинный реалистичный контент каждого типа
+# (с учётом увеличенных кнопок из пункта 5 ТЗ). Окно каждого типа всегда
+# открывается строго одного размера — без динамического измерения высоты.
+DIALOG_SIZE = (460, 440)      # обычный диалог (сообщение + до 4 кнопок)
+STATS_SIZE = (560, 520)       # экран статистики (любая из трёх вкладок)
+DAY_PICKER_SIZE = (460, 340)  # диалог выбора дней недели
+
+
 # ── Класс диалога ──────────────────────────────────────────────────────────
 
 class MascotDialog(QDialog):
@@ -111,8 +119,8 @@ class MascotDialog(QDialog):
     на экран статистики с вкладками, без закрытия диалога.
     Кнопка «Назад» возвращает к основному сообщению.
 
-    Размер окна адаптируется под контент: экран статистики шире (560px),
-    простой диалог — 460px. Высота подгоняется по реальной высоте DOM.
+    Размер окна строго фиксирован: 460×440 для обычного диалога и 560×520
+    для экрана статистики. Высота не измеряется динамически.
     """
 
     def __init__(
@@ -145,7 +153,6 @@ class MascotDialog(QDialog):
         self._is_stats_screen = False
 
         self.setWindowTitle("Anker")
-        self.setMinimumSize(460, 180)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         self.setStyleSheet(f"QDialog {{ background-color: {self._colors['bg']}; }}")
 
@@ -156,15 +163,9 @@ class MascotDialog(QDialog):
         self.webview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.webview.set_bridge_command(self._handle_pycmd, self)
         self.webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
-        self.webview.page().loadFinished.connect(self._on_load_finished)
 
-        self._show_main()
         layout.addWidget(self.webview)
-
-    def _on_load_finished(self, ok: bool) -> None:
-        """Однократный замер высоты с небольшой задержкой после загрузки."""
-        if ok:
-            QTimer.singleShot(100, self._resize_to_content)
+        self._show_main()
 
     def _render_html(self, html: str) -> None:
         """
@@ -182,6 +183,7 @@ class MascotDialog(QDialog):
             self._main_image, self._main_message, self._main_buttons, self._colors
         )
         self._render_html(html)
+        self._apply_fixed_size()
 
     def _show_stats(self, tab: str = "summary") -> None:
         """Показывает экран статистики с вкладками «Итог» / «Главное» / «Все показатели»."""
@@ -217,20 +219,12 @@ class MascotDialog(QDialog):
             last_summary_score=ctx.get("last_summary_score"),
         )
         self._render_html(html)
+        self._apply_fixed_size()
 
-    def _resize_to_content(self) -> None:
-        """Измеряет реальную высоту контента и подгоняет размер окна."""
-        js = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
-        self.webview.page().runJavaScript(
-            js,
-            lambda h: self._apply_content_height(int(h) if h else 380),
-        )
-
-    def _apply_content_height(self, height: int) -> None:
-        """Применяет размер окна: шире для статистики, ниже — по контенту."""
-        width = 560 if self._is_stats_screen else 460
-        target = min(height + 40, 700)
-        self.setFixedSize(width, target)
+    def _apply_fixed_size(self) -> None:
+        """Применяет фиксированный размер окна для текущего экрана."""
+        width, height = STATS_SIZE if self._is_stats_screen else DIALOG_SIZE
+        self.setFixedSize(width, height)
         self._center_on_parent()
 
     def _center_on_parent(self) -> None:
@@ -423,7 +417,7 @@ def show_day_of_week_picker(
 
     dialog = QDialog(mw)
     dialog.setWindowTitle("Anker — дни недели")
-    dialog.setMinimumSize(460, 180)
+    dialog.setFixedSize(*DAY_PICKER_SIZE)
     dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
     dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")
     layout = QVBoxLayout(dialog)
@@ -434,25 +428,6 @@ def show_day_of_week_picker(
     webview.page().setBackgroundColor(Qt.GlobalColor.transparent)
 
     toggled_days: Dict[int, bool] = {day: True for day in normalized_rules}
-
-    def _resize_day_picker() -> None:
-        js = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
-        webview.page().runJavaScript(
-            js,
-            lambda h: _apply_day_picker_height(int(h) if h else 420),
-        )
-
-    def _apply_day_picker_height(height: int) -> None:
-        target = min(height + 40, 700)
-        dialog.setFixedSize(460, target)
-        if mw is not None:
-            try:
-                parent_geo = mw.geometry()
-                x = parent_geo.x() + (parent_geo.width() - dialog.width()) // 2
-                y = parent_geo.y() + (parent_geo.height() - dialog.height()) // 2
-                dialog.move(max(0, x), max(0, y))
-            except Exception:
-                pass
 
     def handle_pycmd(cmd: str) -> None:
         nonlocal toggled_days
@@ -478,7 +453,15 @@ def show_day_of_week_picker(
     webview.set_bridge_command(handle_pycmd, dialog)
     webview.stdHtml(html)
     layout.addWidget(webview)
-    webview.page().loadFinished.connect(
-        lambda ok: QTimer.singleShot(100, _resize_day_picker) if ok else None
-    )
+
+    # Центрируем относительно главного окна Anki
+    if mw is not None:
+        try:
+            parent_geo = mw.geometry()
+            x = parent_geo.x() + (parent_geo.width() - dialog.width()) // 2
+            y = parent_geo.y() + (parent_geo.height() - dialog.height()) // 2
+            dialog.move(max(0, x), max(0, y))
+        except Exception:
+            pass
+
     dialog.exec()
