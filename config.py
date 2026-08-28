@@ -7,6 +7,11 @@ config.py — конфигурация и значения по умолчани
 
 from typing import Dict, List, Any
 
+try:
+    from . import log
+except ImportError:  # вне Anki (тесты) модуль импортируется как top-level
+    import log
+
 # ── Значения по умолчанию ───────────────────────────────────────────────────
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -139,8 +144,8 @@ def get_config(addon_manager=None, module_name: str = "") -> Dict[str, Any]:
             if user_config:
                 # Рекурсивно обновляем только известные ключи
                 _deep_update(config, user_config)
-        except Exception:
-            pass
+        except Exception as e:
+            log.log_error("config.get_config", e)
     # Защита от старых сохранённых конфигов: период анализа не может быть
     # меньше 2 дней (меньше — не хватает точек для графиков динамики).
     config["analysis_period_days"] = max(2, int(config.get("analysis_period_days", 7)))

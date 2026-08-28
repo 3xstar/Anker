@@ -38,6 +38,7 @@ from . import anomaly
 from . import schedule_overrides
 from . import mascot_ui
 from . import deck_selector
+from . import log
 
 # ── Константы ──────────────────────────────────────────────────────────────
 
@@ -51,7 +52,8 @@ def _load_state() -> Dict[str, Any]:
     try:
         raw = mw.col.get_config(STATE_KEY, "{}")
         return json.loads(raw) if raw else {}
-    except Exception:
+    except Exception as e:
+        log.log_error("_load_state", e)
         return {}
 
 
@@ -59,8 +61,8 @@ def _save_state(state: Dict[str, Any]) -> None:
     """Сохраняет состояние аддона в коллекцию."""
     try:
         mw.col.set_config(STATE_KEY, json.dumps(state, ensure_ascii=False, default=str))
-    except Exception:
-        pass
+    except Exception as e:
+        log.log_error("_save_state", e)
 
 
 def _default_state() -> Dict[str, Any]:
@@ -112,7 +114,8 @@ def _get_deck_limit(did: int) -> int:
     try:
         conf = mw.col.decks.config_dict_for_deck_id(did)
         return int(conf.get("new", {}).get("perDay", 20))
-    except Exception:
+    except Exception as e:
+        log.log_error("_get_deck_limit", e)
         return 20
 
 
@@ -733,8 +736,8 @@ def _on_reset_state() -> None:
         config = mw.addonManager.getConfig(__name__) or {}
         config["tracked_deck_ids"] = []
         mw.addonManager.writeConfig(__name__, config)
-    except Exception:
-        pass
+    except Exception as e:
+        log.log_error("_on_reset_state", e)
     tooltip("Anker: состояние сброшено, выбор колод очищен.")
 
 

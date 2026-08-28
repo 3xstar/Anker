@@ -25,6 +25,7 @@ from .html_builder import (
     _again_rate_explanation,
     _difficulty_explanation,
 )
+from . import log
 
 try:
     from aqt import mw
@@ -87,7 +88,8 @@ def _get_theme_colors() -> Dict[str, str]:
             pass
 
         return colors
-    except Exception:
+    except Exception as e:
+        log.log_error("_get_theme_colors", e)
         return dict(DEFAULT_THEME_COLORS)
 
 

@@ -38,6 +38,12 @@ def test_image_data_uri_missing_file_returns_empty():
     assert hb.image_data_uri("nonexistent.png") == ""
 
 
+def test_log_error_writes_without_crashing():
+    import log
+    log.log_error("test_context", ValueError("boom"))
+    # Главный контракт: логирование не должно само падать.
+
+
 def test_font_data_uri_returns_base64():
     uri = hb._font_data_uri("nunito-400.woff2")
     assert uri.startswith("data:font/woff2;base64,")

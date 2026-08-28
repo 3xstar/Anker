@@ -23,6 +23,11 @@ import math
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from . import log
+except ImportError:  # вне Anki (тесты) модуль импортируется как top-level
+    import log
+
 
 # ── Пути к изображениям ────────────────────────────────────────────────────
 
@@ -44,7 +49,8 @@ def image_data_uri(filename: str) -> str:
         with open(path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("ascii")
         return f"data:image/png;base64,{encoded}"
-    except Exception:
+    except Exception as e:
+        log.log_error("html_builder.image_data_uri", e)
         # Пустая строка → img просто не отобразится, без падения диалога.
         return ""
 
@@ -61,7 +67,8 @@ def _font_data_uri(filename: str) -> str:
         with open(path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("ascii")
         return f"data:font/woff2;base64,{encoded}"
-    except Exception:
+    except Exception as e:
+        log.log_error("html_builder._font_data_uri", e)
         # Пустая строка → шрифт просто не подгрузится, останется системный fallback.
         return ""
 

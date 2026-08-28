@@ -11,6 +11,8 @@ deck_selector.py — UI списка колод с чекбоксами (opt-in,
 
 from typing import List, Optional, Set
 
+from . import log
+
 try:
     from aqt import mw
     from aqt.qt import (
@@ -101,7 +103,8 @@ class DeckSelectorDialog(QDialog):
         """Загружает все колоды и текущий выбор из конфига."""
         try:
             decks = mw.col.decks.all_names_and_ids()
-        except Exception:
+        except Exception as e:
+            log.log_error("deck_selector._load_decks", e)
             decks = []
 
         # Фильтруем: только колоды, у которых есть карточки (включая подколоды)
@@ -130,7 +133,8 @@ class DeckSelectorDialog(QDialog):
         try:
             config = mw.addonManager.getConfig(self._addon_module_name)
             return list(config.get("tracked_deck_ids", [])) if config else []
-        except Exception:
+        except Exception as e:
+            log.log_error("deck_selector._current_selected", e)
             return []
 
     def _apply_filter(self) -> None:
