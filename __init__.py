@@ -347,6 +347,8 @@ def _show_anomaly_flow(
         "is_anomaly": True,
         "metric_weights": config.get("metric_weights", {}),
         "last_summary_score": ds.get("last_summary_score"),
+        "deck_name": deck_name,
+        "period": int(config.get("analysis_period_days", 7)),
     }
 
     def on_action(action: str) -> None:
@@ -455,6 +457,8 @@ def _show_planned_visit_flow(
         "is_anomaly": False,
         "metric_weights": config.get("metric_weights", {}),
         "last_summary_score": ds.get("last_summary_score"),
+        "deck_name": deck_name,
+        "period": int(config.get("analysis_period_days", 7)),
     }
 
     def on_action(action: str) -> None:

@@ -227,7 +227,7 @@ __CSS__
     </div>
   </div>
   <div class="stats-link-row">
-    <button class="btn-link" onclick="pycmd('anker:show_stats')">Моя статистика</button>
+    <button class="btn-link" onclick="pycmd('anker:show_stats')">__STATS_BUTTON_LABEL__</button>
   </div>
 </body>
 </html>"""
@@ -314,6 +314,8 @@ def build_dialog_html(
     message: str,
     buttons: List[Dict[str, str]],
     theme_colors: Dict[str, str] | None = None,
+    deck_name: Optional[str] = None,
+    period: Optional[int] = None,
 ) -> str:
     """
     Собирает полный HTML основного диалога маскота.
@@ -324,6 +326,8 @@ def build_dialog_html(
         buttons: список кнопок (см. build_buttons_html).
         theme_colors: словарь цветов темы (bg, frame_bg, text, border, ...).
                       Если None — используются светлые значения по умолчанию.
+        deck_name: имя отслеживаемой колоды (для подписи кнопки статистики).
+        period: период анализа в днях (для подписи кнопки статистики).
 
     Returns:
         Готовая HTML-строка для AnkiWebView.
@@ -331,12 +335,19 @@ def build_dialog_html(
     if theme_colors is None:
         theme_colors = DEFAULT_THEME_COLORS
     css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
+
+    if deck_name and period:
+        stats_button_label = f"Статистика {deck_name} ({period} дн.)"
+    else:
+        stats_button_label = "Моя статистика"
+
     return (
         HTML_TEMPLATE
         .replace("__CSS__", css)
         .replace("__MESSAGE__", message)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__BUTTONS_HTML__", build_buttons_html(buttons))
+        .replace("__STATS_BUTTON_LABEL__", stats_button_label)
     )
 
 
@@ -588,6 +599,8 @@ __CSS__
   .tab-btn:first-child { border-radius:10px 0 0 10px; }
   .tab-btn:last-child { border-radius:0 10px 10px 0; }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
+  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:20px;
+    color:__TEXT_COLOR__; text-align:left; margin-bottom:8px; }
   .stats-container { text-align:center; padding:10px 0; }
   .stats-container .metric-title {
     font-family: 'Nunito', sans-serif;
@@ -636,6 +649,7 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
 <body class="__BODY_CLASS__">
   <div class="bubble-wrapper">
     <div class="bubble">
+      __DECK_TITLE_BLOCK__
       <div class="tabs">
         <button class="tab-btn __TAB_SUMMARY_ACTIVE__"
          onclick="pycmd('anker:stats_tab_summary')">Итог</button>
@@ -825,7 +839,7 @@ def _build_main_tab_content(
     return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-title">Нет данных</div></div>'
 
 
-def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
+def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
         ("Вспоминаемость", "true_retention", _retention_explanation, "%", "daily_retention"),
@@ -839,8 +853,12 @@ def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
         ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "", "daily_relearning_count"),
     ]
 
+    note = (
+        f"Ниже представлены показатели за {period} дн. "
+        "Они могут отличаться от общей статистики в Anki (Stats)."
+    )
     parts = [
-        '<div class="stats-note">Показатели ниже — за последние дни (период анализа), а не за всё время. Поэтому они могут отличаться от общей статистики в Anki (Stats).</div>',
+        f'<div class="stats-note">{note}</div>',
         '<div class="all-metrics">',
     ]
     for name, key, explain_fn, suffix, daily_key in rows_def:
@@ -1055,6 +1073,8 @@ def build_stats_tabbed_html(
     theme_colors: Dict[str, str] | None = None,
     metric_weights: Dict[str, float] | None = None,
     last_summary_score: Dict[str, Any] | None = None,
+    deck_name: Optional[str] = None,
+    period: Optional[int] = None,
 ) -> str:
     """
     Собирает HTML экрана обоснования с вкладками «Итог», «Главное» и «Все показатели».
@@ -1069,6 +1089,8 @@ def build_stats_tabbed_html(
         theme_colors: цвета темы.
         metric_weights: веса метрик из конфига.
         last_summary_score: предыдущая оценка для сравнения {"value": 7.3, "date": "..."}.
+        deck_name: имя колоды (для заголовка экрана статистики).
+        period: период анализа в днях (для подписи во вкладке «Все показатели»).
     """
     if theme_colors is None:
         theme_colors = DEFAULT_THEME_COLORS
@@ -1079,11 +1101,13 @@ def build_stats_tabbed_html(
     tab_all_active = "active" if active_tab == "all" else ""
 
     if active_tab == "all":
-        content = _build_all_tab_content(metrics)
+        content = _build_all_tab_content(metrics, period or 7)
     elif active_tab == "main":
         content = _build_main_tab_content(metrics, decision_action, is_anomaly, metric_weights)
     else:
         content = _build_summary_tab_content(metrics, metric_weights, last_summary_score)
+
+    deck_title_block = f'<div class="stats-deck-title">{deck_name}</div>' if deck_name else ""
 
     return (
         STATS_TABBED_TEMPLATE
@@ -1093,6 +1117,7 @@ def build_stats_tabbed_html(
         .replace("__TAB_MAIN_ACTIVE__", tab_main_active)
         .replace("__TAB_ALL_ACTIVE__", tab_all_active)
         .replace("__TAB_CONTENT__", content)
+        .replace("__DECK_TITLE_BLOCK__", deck_title_block)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__TEXT_COLOR__", theme_colors.get("text", DEFAULT_THEME_COLORS["text"]))
         .replace("__BORDER_COLOR__", theme_colors.get("border", DEFAULT_THEME_COLORS["border"]))

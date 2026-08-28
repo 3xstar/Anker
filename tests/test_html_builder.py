@@ -124,6 +124,20 @@ def test_no_placeholder_markers_remain():
     assert "__MESSAGE__" not in html
     assert "__IMAGE_URL__" not in html
     assert "__BUTTONS_HTML__" not in html
+    assert "__STATS_BUTTON_LABEL__" not in html
+
+
+def test_dialog_button_default_label():
+    html = hb.build_dialog_html("neutral.png", "msg", make_buttons(1))
+    assert "Моя статистика" in html
+
+
+def test_dialog_button_dynamic_label():
+    html = hb.build_dialog_html(
+        "neutral.png", "msg", make_buttons(1), deck_name="Английский", period=7
+    )
+    assert "Статистика Английский (7 дн.)" in html
+    assert "Моя статистика" not in html
 
 
 def test_shared_css_uses_anki_palette():
@@ -360,6 +374,50 @@ def test_stats_tabbed_no_placeholder_markers():
     assert "__TAB_ALL_ACTIVE__" not in html
     assert "__TAB_CONTENT__" not in html
     assert "__IMAGE_URL__" not in html
+    assert "__DECK_TITLE_BLOCK__" not in html
+
+
+def test_stats_tabbed_deck_title():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+        deck_name="Английский",
+    )
+    assert 'class="stats-deck-title"' in html
+    assert "Английский" in html
+
+
+def test_stats_tabbed_no_deck_title_when_absent():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+    )
+    assert '<div class="stats-deck-title">' not in html
+
+
+def test_stats_tabbed_all_tab_dynamic_period_note():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="all",
+        image_filename="neutral.png",
+        period=14,
+    )
+    assert "за 14 дн." in html
+    assert "за всё время" not in html
 
 
 # ── Тесты: функции пояснений ───────────────────────────────────────────────

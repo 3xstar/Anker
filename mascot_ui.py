@@ -147,6 +147,11 @@ class MascotDialog(QDialog):
         self._stats_context = stats_context
         self._colors = _get_theme_colors()
 
+        # Имя колоды и период анализа — для подписей кнопки статистики
+        # и заголовка экрана статистики.
+        self._deck_name = (stats_context or {}).get("deck_name")
+        self._period = (stats_context or {}).get("period")
+
         # Сохраняем параметры для восстановления после экрана статистики
         self._main_image = image_filename
         self._main_message = message
@@ -182,7 +187,12 @@ class MascotDialog(QDialog):
         """Показывает основной экран диалога."""
         self._is_stats_screen = False
         html = build_dialog_html(
-            self._main_image, self._main_message, self._main_buttons, self._colors
+            self._main_image,
+            self._main_message,
+            self._main_buttons,
+            self._colors,
+            deck_name=self._deck_name,
+            period=self._period,
         )
         self._render_html(html)
         self._apply_fixed_size()
@@ -223,6 +233,8 @@ class MascotDialog(QDialog):
             theme_colors=self._colors,
             metric_weights=ctx.get("metric_weights"),
             last_summary_score=ctx.get("last_summary_score"),
+            deck_name=self._deck_name,
+            period=self._period,
         )
         self._render_html(html)
         self._apply_fixed_size()
