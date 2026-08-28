@@ -509,6 +509,89 @@ def test_sparkline_number_format():
     assert "%" not in svg
 
 
+# ── Тесты: build_gauge_svg ─────────────────────────────────────────────────
+
+def test_gauge_none_returns_empty():
+    assert hb.build_gauge_svg(None) == ""
+
+
+def test_gauge_generates_svg():
+    svg = hb.build_gauge_svg(5.5)
+    assert "<svg" in svg
+    assert "<rect" in svg
+    assert "<linearGradient" in svg
+    assert "5.5" in svg
+
+
+def test_gauge_clamps_out_of_range():
+    svg = hb.build_gauge_svg(25.0)
+    assert "<svg" in svg
+    assert "10.0" in svg  # зажато к max_value
+
+
+# ── Тесты: build_donut_svg ─────────────────────────────────────────────────
+
+def test_donut_none_returns_empty():
+    assert hb.build_donut_svg(None) == ""
+
+
+def test_donut_generates_svg():
+    svg = hb.build_donut_svg(0.18)
+    assert "<svg" in svg
+    assert "<circle" in svg
+    assert "18%" in svg
+
+
+def test_donut_clamps_ratio():
+    svg = hb.build_donut_svg(1.5)
+    assert "<svg" in svg
+    assert "100%" in svg
+
+
+# ── Тесты: build_bar_pair_svg ──────────────────────────────────────────────
+
+def test_bar_pair_both_none_returns_empty():
+    assert hb.build_bar_pair_svg("Ожидалось", None, "Фактически", None) == ""
+
+
+def test_bar_pair_generates_svg():
+    svg = hb.build_bar_pair_svg("Ожидалось", 50, "Фактически", 80)
+    assert "<svg" in svg
+    assert "<rect" in svg
+    assert "Ожидалось" in svg
+    assert "Фактически" in svg
+    assert "50" in svg
+    assert "80" in svg
+
+
+def test_bar_pair_single_value():
+    svg = hb.build_bar_pair_svg("Ожидалось", None, "Фактически", 80)
+    assert "<svg" in svg
+    assert "—" in svg
+
+
+# ── Тесты: визуализации во вкладке «Все показатели» ────────────────────────
+
+def test_all_tab_renders_individual_visualizations():
+    metrics = make_test_metrics()
+    metrics["actual_vs_predicted_counts"] = {"actual": 80, "predicted": 50}
+    metrics["daily_stability"] = [("15.08", 8.0), ("16.08", 9.5)]
+    metrics["daily_time"] = [("15.08", 10.0), ("16.08", 12.0)]
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="all",
+        image_filename="neutral.png",
+    )
+    assert "gauge-grad" in html       # градусник для сложности
+    assert "linearGradient" in html
+    assert "Ожидалось" in html        # парные столбцы для «Факт vs прогноз»
+    assert "Фактически" in html
+    assert "18%" in html              # donut для доли нестабильных (0.18)
+
+
 # ── Тесты: _grade_color ────────────────────────────────────────────────────
 
 def test_grade_color_best():

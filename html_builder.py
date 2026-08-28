@@ -19,6 +19,7 @@ html_builder.py — чистая генерация HTML для диалогов
 """
 
 import base64
+import math
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -451,6 +452,164 @@ def build_sparkline_svg(
 </svg>"""
 
 
+# ── SVG gauge (градусник) ──────────────────────────────────────────────────
+
+def build_gauge_svg(
+    value: Optional[float],
+    min_value: float = 0.0,
+    max_value: float = 10.0,
+    width: int = 280,
+    height: int = 80,
+) -> str:
+    """
+    Горизонтальная шкала-градусник (градиент зелёный→красный слева направо)
+    с маркером текущего значения и подписью значения у маркера.
+    """
+    if value is None:
+        return ""
+    v = max(min_value, min(max_value, float(value)))
+    span = max_value - min_value
+    frac = (v - min_value) / span if span > 0 else 0.0
+
+    pad = 20
+    track_w = width - 2 * pad
+    bar_h = 16
+    bar_y = height / 2 - bar_h / 2
+    marker_x = pad + frac * track_w
+
+    return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  <defs>
+    <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#107c10"/>
+      <stop offset="50%" stop-color="#e8c93a"/>
+      <stop offset="100%" stop-color="#d13438"/>
+    </linearGradient>
+  </defs>
+  <rect x="{pad:.1f}" y="{bar_y:.1f}" width="{track_w:.1f}" height="{bar_h:.1f}"
+   rx="{bar_h / 2:.1f}" fill="url(#gauge-grad)"/>
+  <circle cx="{marker_x:.1f}" cy="{bar_y + bar_h / 2:.1f}" r="6"
+   fill="__TEXT_COLOR__" stroke="#ffffff" stroke-width="2"/>
+  <text x="{marker_x:.1f}" y="{bar_y - 8:.1f}" font-size="11" text-anchor="middle"
+   fill="__TEXT_COLOR__">{v:.1f}</text>
+</svg>"""
+
+
+# ── SVG donut (кольцевая диаграмма) ────────────────────────────────────────
+
+def build_donut_svg(
+    ratio: Optional[float],
+    size: int = 140,
+    stable_color: str = "#107c10",
+    unstable_color: str = "#d13438",
+) -> str:
+    """
+    Кольцевая диаграмма на чистом SVG: два дуговых сегмента — стабильные
+    (зелёный) и нестабильные (красный). В центре — процент нестабильных.
+    """
+    if ratio is None:
+        return ""
+    ratio = max(0.0, min(1.0, float(ratio)))
+
+    stroke_w = 14
+    cx = cy = size / 2
+    r = (size - stroke_w) / 2
+    circumference = 2 * math.pi * r
+    unstable_len = ratio * circumference
+    stable_len = (1.0 - ratio) * circumference
+
+    return f"""<svg width="{size}" height="{size}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="#e0e0e0"
+   stroke-width="{stroke_w}" fill="none"/>
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="{stable_color}"
+   stroke-width="{stroke_w}" fill="none"
+   stroke-dasharray="{stable_len:.1f} {circumference:.1f}" stroke-dashoffset="0"
+   transform="rotate(-90 {cx:.1f} {cy:.1f})"/>
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="{unstable_color}"
+   stroke-width="{stroke_w}" fill="none"
+   stroke-dasharray="{unstable_len:.1f} {circumference:.1f}"
+   stroke-dashoffset="{-stable_len:.1f}"
+   transform="rotate(-90 {cx:.1f} {cy:.1f})"/>
+  <text x="{cx:.1f}" y="{cy:.1f}" font-size="22" font-weight="800"
+   text-anchor="middle" dominant-baseline="central"
+   fill="__TEXT_COLOR__">{int(ratio * 100)}%</text>
+</svg>"""
+
+
+# ── SVG парная столбчатая диаграмма ────────────────────────────────────────
+
+def build_bar_pair_svg(
+    left_label: str,
+    left_value: Optional[float],
+    right_label: str,
+    right_value: Optional[float],
+    left_color: str = "#0078d4",
+    right_color: str = "#d13438",
+    width: int = 280,
+    height: int = 120,
+    value_format: str = "number",
+) -> str:
+    """
+    Парная столбчатая диаграмма: два столбца разной высоты рядом,
+    с подписанными числами над каждым столбцом и подписями под столбцами.
+    """
+    if left_value is None and right_value is None:
+        return ""
+
+    def _fmt(v: Optional[float]) -> str:
+        if v is None:
+            return "—"
+        if value_format == "percent":
+            return f"{v * 100:.0f}%"
+        if float(v).is_integer():
+            return f"{int(v)}"
+        return f"{v:.1f}"
+
+    non_none = [v for v in (left_value, right_value) if v is not None]
+    max_v = max(non_none) if non_none else 1.0
+    if max_v <= 0:
+        max_v = 1.0
+
+    gap = 32
+    chart_w = width - 40  # боковые поля
+    bar_w = min(72.0, (chart_w - gap) / 2)
+    total_w = 2 * bar_w + gap
+    start_x = (width - total_w) / 2
+
+    pad_top = 24   # под подписи значений
+    pad_bottom = 24  # под подписи столбцов
+    plot_h = height - pad_top - pad_bottom
+
+    def _bar(x: float, v: Optional[float], color: str) -> str:
+        h = (v / max_v) * plot_h if v is not None else 0.0
+        y = pad_top + (plot_h - h)
+        cx = x + bar_w / 2
+        return (
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
+            f'rx="4" fill="{color}"/>'
+            f'<text x="{cx:.1f}" y="{y - 6:.1f}" font-size="11" text-anchor="middle" '
+            f'fill="__TEXT_COLOR__">{_fmt(v)}</text>'
+        )
+
+    left_x = start_x
+    right_x = start_x + bar_w + gap
+    bars = _bar(left_x, left_value, left_color) + _bar(right_x, right_value, right_color)
+
+    labels = (
+        f'<text x="{left_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="11" '
+        f'text-anchor="middle" fill="__TEXT_COLOR__">{left_label}</text>'
+        f'<text x="{right_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="11" '
+        f'text-anchor="middle" fill="__TEXT_COLOR__">{right_label}</text>'
+    )
+
+    return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  {bars}
+  {labels}
+</svg>"""
+
+
 # ── Шаблоны пояснений для экрана «Почему?» ─────────────────────────────────
 
 def _retention_explanation(retention: Optional[float]) -> str:
@@ -860,6 +1019,52 @@ def _build_main_tab_content(
 _PERCENT_DAILY_KEYS = {"daily_retention", "daily_new_card_retention", "daily_again_rate"}
 
 
+def _metric_detail_html(
+    key: str,
+    metrics: Dict[str, Any],
+    value: Optional[float],
+    daily_key: Optional[str],
+) -> str:
+    """
+    Возвращает HTML детализации (визуализации) для сворачиваемого блока
+    конкретной метрики, либо пустую строку, если визуализировать нечего.
+    """
+    # Дневной ряд → sparkline (линейный график динамики)
+    if daily_key:
+        daily = metrics.get(daily_key, [])
+        if daily:
+            value_format = "percent" if daily_key in _PERCENT_DAILY_KEYS else "number"
+            svg = build_sparkline_svg(daily, value_format=value_format)
+            return f'<div class="metric-row-detail">{svg}</div>'
+        return ""
+
+    if value is None:
+        return ""
+
+    if key == "avg_difficulty":
+        svg = build_gauge_svg(value)
+    elif key == "avg_stability":
+        daily = metrics.get("daily_stability", [])
+        svg = build_sparkline_svg(daily, value_format="number") if daily else ""
+    elif key == "low_stability_ratio":
+        svg = build_donut_svg(value)
+    elif key == "actual_vs_predicted":
+        counts = metrics.get("actual_vs_predicted_counts") or {}
+        svg = build_bar_pair_svg(
+            "Ожидалось", counts.get("predicted"),
+            "Фактически", counts.get("actual"),
+        )
+    elif key == "avg_time_growth":
+        daily = metrics.get("daily_time", [])
+        svg = build_sparkline_svg(daily, value_format="number") if daily else ""
+    else:
+        return ""
+
+    if not svg:
+        return ""
+    return f'<div class="metric-row-detail">{svg}</div>'
+
+
 def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
@@ -896,41 +1101,8 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         desc = explain_fn(value)
         color = _metric_color(key, value)
 
-        # Sparkline или текстовая детализация для сворачиваемого блока
-        detail_html = ""
-        if daily_key:
-            daily = metrics.get(daily_key, [])
-            if daily:
-                value_format = "percent" if daily_key in _PERCENT_DAILY_KEYS else "number"
-                sparkline_html = build_sparkline_svg(daily, value_format=value_format)
-                detail_html = f'<div class="metric-row-detail">{sparkline_html}</div>'
-        elif key == "avg_difficulty" and value is not None:
-            detail_html = (
-                f'<div class="metric-row-detail">'
-                f'Сложность FSRS: {value:.1f} из 10. '
-                f'Чем выше — тем труднее карточки.</div>'
-            )
-        elif key == "avg_stability" and value is not None:
-            detail_html = (
-                f'<div class="metric-row-detail">'
-                f'Средний интервал до следующего повторения: {value:.1f} дн.</div>'
-            )
-        elif key == "low_stability_ratio" and value is not None:
-            detail_html = (
-                f'<div class="metric-row-detail">'
-                f'{int(value * 100)}% карточек имеют стабильность ниже 1 дня.</div>'
-            )
-        elif key == "actual_vs_predicted" and value is not None:
-            detail_html = (
-                f'<div class="metric-row-detail">'
-                f'Отношение повторений за последний период к предыдущему: {value:.2f}. '
-                f'{"> 1 — нагрузка растёт" if value > 1 else "< 1 — нагрузка снижается"}.</div>'
-            )
-        elif key == "avg_time_growth" and value is not None:
-            detail_html = (
-                f'<div class="metric-row-detail">'
-                f'Отношение среднего времени на карточку к предыдущему периоду: {value:.2f}.</div>'
-            )
+        # Визуализация для сворачиваемого блока (sparkline/gauge/donut/столбцы)
+        detail_html = _metric_detail_html(key, metrics, value, daily_key)
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'

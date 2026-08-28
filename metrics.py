@@ -283,6 +283,7 @@ def collect_metrics(
         "avg_stability": None,
         "low_stability_ratio": None,
         "actual_vs_predicted": None,
+        "actual_vs_predicted_counts": None,  # {"actual": N, "predicted": M}
         "avg_time_per_card": None,
         "avg_time_growth": None,
         "consistency": None,
@@ -292,6 +293,8 @@ def collect_metrics(
         "daily_new_card_retention": [],
         "daily_review_count": [],
         "daily_relearning_count": [],
+        "daily_stability": [],  # [(day_label, avg_ivl), ...] — прокси стабильности
+        "daily_time": [],  # [(day_label, avg_seconds), ...]
     }
 
     # 1. True Retention (единый период)
@@ -323,7 +326,14 @@ def collect_metrics(
             metrics["low_stability_ratio"] = low_count / len(stabilities)
 
     # 5. Фактическая нагрузка vs теоретическая (period vs предыдущий period)
-    metrics["actual_vs_predicted"] = _actual_vs_predicted(revlog, today, period)
+    recent_reviews, prev_reviews = _actual_vs_predicted_counts(revlog, today, period)
+    metrics["actual_vs_predicted"] = (
+        (recent_reviews / prev_reviews) if prev_reviews else None
+    )
+    metrics["actual_vs_predicted_counts"] = {
+        "actual": recent_reviews,
+        "predicted": prev_reviews,
+    }
 
     # 6. Время на карточку (period vs предыдущий period)
     metrics["avg_time_per_card"], metrics["avg_time_growth"] = _time_per_card(
@@ -342,6 +352,8 @@ def collect_metrics(
     metrics["daily_new_card_retention"] = _daily_new_card_retention_series(revlog, today, 30)
     metrics["daily_review_count"] = _daily_review_count_series(revlog, today, period)
     metrics["daily_relearning_count"] = _daily_relearning_count_series(revlog, today, period)
+    metrics["daily_stability"] = _daily_stability_series(revlog, today, period)
+    metrics["daily_time"] = _daily_time_series(revlog, today, period)
 
     metrics["has_enough_history"] = (
         metrics["history_days"] >= int(config.get("min_history_days", 7))
@@ -442,13 +454,13 @@ def _button_ratio_by_maturity(
     return button_ratios(eases)
 
 
-def _actual_vs_predicted(
+def _actual_vs_predicted_counts(
     revlog: Sequence[Dict[str, Any]], today: datetime.date, period: int
-) -> Optional[float]:
+) -> Tuple[int, int]:
     """
-    Отношение фактической нагрузки к «прогнозу». Сравниваем число review
-    за последние period дней с числом review за предыдущие period дней.
-    Значение > 1 означает растущую нагрузку.
+    Возвращает (recent, prev) — число повторений (review + relearn) за
+    последние period дней и за предыдущие period дней. Используется и для
+    отношения «факт vs прогноз», и для парной столбчатой диаграммы.
     """
     recent_start = today - datetime.timedelta(days=period)
     prev_start = today - datetime.timedelta(days=period * 2)
@@ -465,9 +477,7 @@ def _actual_vs_predicted(
         if r["type"] in (REVLOG_TYPE_REVIEW, REVLOG_TYPE_RELEARN)
         and prev_start <= r["day"] < recent_start
     )
-    if prev == 0:
-        return None
-    return recent / prev
+    return recent, prev
 
 
 def _time_per_card(
@@ -655,4 +665,47 @@ def _daily_relearning_count_series(
             and r["day"] == day
         )
         result.append((day.strftime("%d.%m"), float(count) if count > 0 else None))
+    return result
+
+
+def _daily_stability_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """
+    Дневная динамика средней стабильности. FSRS-стабильность — это снимок
+    текущего состояния карточки (без истории), поэтому в качестве дневного
+    прокси берём средний выданный интервал (ivl) по повторениям за день:
+    он растёт вместе с закреплением карточек.
+    """
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        ivls = [
+            r["ivl"]
+            for r in revlog
+            if r["type"] == REVLOG_TYPE_REVIEW and r["ivl"] > 0 and r["day"] == day
+        ]
+        if ivls:
+            result.append((day.strftime("%d.%m"), sum(ivls) / len(ivls)))
+        else:
+            result.append((day.strftime("%d.%m"), None))
+    return result
+
+
+def _daily_time_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """Дневная динамика среднего времени на карточку (в секундах)."""
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        times = [
+            r["time"] / 1000.0
+            for r in revlog
+            if r["day"] == day and r["time"] > 0
+        ]
+        if times:
+            result.append((day.strftime("%d.%m"), sum(times) / len(times)))
+        else:
+            result.append((day.strftime("%d.%m"), None))
     return result
