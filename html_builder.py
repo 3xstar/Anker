@@ -387,8 +387,8 @@ def build_day_picker_html(
 
 def build_sparkline_svg(
     data: List[tuple],  # [(label, value), ...], value может быть None
-    width: int = 280,
-    height: int = 80,
+    width: int = 360,
+    height: int = 100,
     color: str = "#0078d4",
     value_format: str = "number",  # "percent" | "number"
 ) -> str:
@@ -439,7 +439,7 @@ def build_sparkline_svg(
         y = padding_top + usable_h - ((v - min_v) / v_range) * usable_h
         dots += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="{color}"/>'
         labels += (
-            f'<text x="{x:.1f}" y="{y - 8:.1f}" font-size="10" '
+            f'<text x="{x:.1f}" y="{y - 8:.1f}" font-size="12" '
             f'text-anchor="middle" fill="{color}">{_fmt(v)}</text>'
         )
 
@@ -458,8 +458,8 @@ def build_gauge_svg(
     value: Optional[float],
     min_value: float = 0.0,
     max_value: float = 10.0,
-    width: int = 280,
-    height: int = 80,
+    width: int = 360,
+    height: int = 100,
 ) -> str:
     """
     Горизонтальная шкала-градусник (градиент зелёный→красный слева направо)
@@ -490,7 +490,7 @@ def build_gauge_svg(
    rx="{bar_h / 2:.1f}" fill="url(#gauge-grad)"/>
   <circle cx="{marker_x:.1f}" cy="{bar_y + bar_h / 2:.1f}" r="6"
    fill="__TEXT_COLOR__" stroke="#ffffff" stroke-width="2"/>
-  <text x="{marker_x:.1f}" y="{bar_y - 8:.1f}" font-size="11" text-anchor="middle"
+  <text x="{marker_x:.1f}" y="{bar_y - 8:.1f}" font-size="13" text-anchor="middle"
    fill="__TEXT_COLOR__">{v:.1f}</text>
 </svg>"""
 
@@ -499,7 +499,7 @@ def build_gauge_svg(
 
 def build_donut_svg(
     ratio: Optional[float],
-    size: int = 140,
+    size: int = 170,
     stable_color: str = "#107c10",
     unstable_color: str = "#d13438",
 ) -> str:
@@ -531,7 +531,7 @@ def build_donut_svg(
    stroke-dasharray="{unstable_len:.1f} {circumference:.1f}"
    stroke-dashoffset="{-stable_len:.1f}"
    transform="rotate(-90 {cx:.1f} {cy:.1f})"/>
-  <text x="{cx:.1f}" y="{cy:.1f}" font-size="22" font-weight="800"
+  <text x="{cx:.1f}" y="{cy:.1f}" font-size="26" font-weight="800"
    text-anchor="middle" dominant-baseline="central"
    fill="__TEXT_COLOR__">{int(ratio * 100)}%</text>
 </svg>"""
@@ -546,8 +546,8 @@ def build_bar_pair_svg(
     right_value: Optional[float],
     left_color: str = "#0078d4",
     right_color: str = "#d13438",
-    width: int = 280,
-    height: int = 120,
+    width: int = 360,
+    height: int = 140,
     value_format: str = "number",
 ) -> str:
     """
@@ -573,7 +573,7 @@ def build_bar_pair_svg(
 
     gap = 32
     chart_w = width - 40  # боковые поля
-    bar_w = min(72.0, (chart_w - gap) / 2)
+    bar_w = min(88.0, (chart_w - gap) / 2)
     total_w = 2 * bar_w + gap
     start_x = (width - total_w) / 2
 
@@ -588,7 +588,7 @@ def build_bar_pair_svg(
         return (
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
             f'rx="4" fill="{color}"/>'
-            f'<text x="{cx:.1f}" y="{y - 6:.1f}" font-size="11" text-anchor="middle" '
+            f'<text x="{cx:.1f}" y="{y - 6:.1f}" font-size="13" text-anchor="middle" '
             f'fill="__TEXT_COLOR__">{_fmt(v)}</text>'
         )
 
@@ -597,9 +597,9 @@ def build_bar_pair_svg(
     bars = _bar(left_x, left_value, left_color) + _bar(right_x, right_value, right_color)
 
     labels = (
-        f'<text x="{left_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="11" '
+        f'<text x="{left_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="13" '
         f'text-anchor="middle" fill="__TEXT_COLOR__">{left_label}</text>'
-        f'<text x="{right_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="11" '
+        f'<text x="{right_x + bar_w / 2:.1f}" y="{height - 8:.1f}" font-size="13" '
         f'text-anchor="middle" fill="__TEXT_COLOR__">{right_label}</text>'
     )
 
@@ -768,38 +768,38 @@ STATS_TABBED_TEMPLATE = """<!DOCTYPE html>
 __CSS__
   .tabs { display:flex; gap:0; margin-bottom:8px; }
   .tab-btn {
-    flex:1; padding:8px 0; font-size:13px; font-family:inherit;
+    flex:1; padding:10px 0; font-size:18px; font-family:inherit;
     background:#ffffff; color:#1f1f23; border:1px solid #c8c8ce;
     cursor:pointer; text-align:center; transition:background 0.15s;
   }
   .tab-btn:first-child { border-radius:10px 0 0 10px; }
   .tab-btn:last-child { border-radius:0 10px 10px 0; }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
-  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:20px;
+  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:26px;
     color:__TEXT_COLOR__; text-align:left; margin-bottom:8px; }
   .stats-container { text-align:center; padding:10px 0; }
   .stats-container .metric-title {
     font-family: 'Nunito', sans-serif;
     font-weight: 700;
-    font-size: 17px;
+    font-size: 22px;
     color: __TEXT_COLOR__;
     margin-bottom: 4px;
   }
-  .metric-value { font-size:36px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:4px; }
-  .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
+  .metric-value { font-size:52px; font-weight:800; color:__TEXT_COLOR__; margin-bottom:4px; }
+  .metric-explanation { font-size:18px; color:__TEXT_COLOR__; opacity:0.8;
     line-height:1.45; margin:8px 16px; }
   .all-metrics { text-align:left; }
   /* Внутренний скролл содержимого вкладки: окно фиксировано, поэтому
      длинный контент (несколько развёрнутых показателей) скроллится только
      внутри, не растягивая окно. */
-  .tab-content-scroll { max-height:280px; overflow-y:auto; }
-  .stats-note { font-size:11px; color:__TEXT_COLOR__; opacity:0.55;
+  .tab-content-scroll { max-height:480px; overflow-y:auto; }
+  .stats-note { font-size:15px; color:__TEXT_COLOR__; opacity:0.55;
     padding:4px 0 8px 0; line-height:1.35; }
   .metric-row { display:flex; justify-content:space-between; align-items:center;
     padding:6px 0; border-bottom:1px solid __BORDER_COLOR__; }
-  .metric-row-name { font-size:13px; color:__TEXT_COLOR__; }
-  .metric-row-value { font-size:14px; font-weight:600; color:__TEXT_COLOR__; }
-  .metric-row-desc { font-size:11px; color:__TEXT_COLOR__; opacity:0.6; }
+  .metric-row-name { font-size:17px; font-weight:700; color:__TEXT_COLOR__; }
+  .metric-row-value { font-size:19px; font-weight:600; color:__TEXT_COLOR__; }
+  .metric-row-desc { font-size:15px; color:__TEXT_COLOR__; opacity:0.6; }
   .metric-row { display:block; cursor:pointer; user-select:none;
     padding:8px 0; border-bottom:1px solid __BORDER_COLOR__; }
   .metric-row-header { display:flex; justify-content:space-between; align-items:center; }
@@ -807,17 +807,17 @@ __CSS__
   .metric-row.expanded .metric-row-detail { display:block; }
   .summary-tab-content { display:flex; flex-direction:column;
     justify-content:center; align-items:center; min-height:100%; }
-  .summary-score { font-size:48px; font-weight:800; margin:8px 0; }
-  .summary-comment { font-size:14px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
-  .summary-compare { font-size:12px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
+  .summary-score { font-size:64px; font-weight:800; margin:8px 0; }
+  .summary-comment { font-size:19px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
+  .summary-compare { font-size:16px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
   .summary-recommendations { margin:12px 16px; text-align:left; }
-  .summary-recommendations-title { font-size:13px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:6px; }
+  .summary-recommendations-title { font-size:17px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:6px; }
   .summary-recommendations-list { padding-left:18px; margin:0; }
-  .summary-recommendations-list li { font-size:12px; color:__TEXT_COLOR__; line-height:1.4; margin-bottom:4px; }
-  .summary-recommendations-empty { font-size:12px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
+  .summary-recommendations-list li { font-size:16px; color:__TEXT_COLOR__; line-height:1.4; margin-bottom:4px; }
+  .summary-recommendations-empty { font-size:16px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
   /* Экран статистики — шире, чем простой диалог */
-  .stats-screen .bubble-wrapper { max-width:520px; }
-  .stats-screen .bottom-area { max-width:520px; }
+  .stats-screen .bubble-wrapper { max-width:720px; }
+  .stats-screen .bottom-area { max-width:720px; }
 </style>
 <script>
 function toggleMetricRow(el) { el.classList.toggle('expanded'); }
@@ -1246,7 +1246,7 @@ def _build_summary_tab_content(
     parts = [
         '<div class="summary-tab-content">',
         '<div class="stats-container">',
-        f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:20px;">/10</span></div>',
+        f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:26px;">/10</span></div>',
         f'<div class="summary-comment">{comment}</div>',
     ]
     if compare_html:
