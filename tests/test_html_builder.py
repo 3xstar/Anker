@@ -38,6 +38,30 @@ def test_image_data_uri_missing_file_returns_empty():
     assert hb.image_data_uri("nonexistent.png") == ""
 
 
+def test_font_data_uri_returns_base64():
+    uri = hb._font_data_uri("nunito-400.woff2")
+    assert uri.startswith("data:font/woff2;base64,")
+    assert len(uri) > len("data:font/woff2;base64,")
+
+
+def test_font_data_uri_missing_file_returns_empty():
+    assert hb._font_data_uri("nonexistent.woff2") == ""
+
+
+def test_font_faces_css_contains_nunito():
+    css = hb._font_faces_css()
+    assert "@font-face" in css
+    assert "Nunito" in css
+    assert "data:font/woff2;base64," in css
+
+
+def test_dialog_html_embeds_nunito_font():
+    html = hb.build_dialog_html("neutral.png", "msg", make_buttons(1))
+    assert "@font-face" in html
+    assert "'Nunito'" in html
+    assert "data:font/woff2;base64," in html
+
+
 # ── Тесты: build_buttons_html ──────────────────────────────────────────────
 
 def test_build_buttons_html_empty():

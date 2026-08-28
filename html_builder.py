@@ -48,11 +48,44 @@ def image_data_uri(filename: str) -> str:
         return ""
 
 
+def _font_data_uri(filename: str) -> str:
+    """
+    Возвращает data URI (base64) для шрифта из assets/fonts/.
+
+    Внешние источники (Google Fonts CDN и т.п.) недоступны, поэтому шрифт
+    встраивается локально через @font-face тем же способом, что и PNG персонажа.
+    """
+    path = os.path.join(_assets_dir(), "fonts", filename)
+    try:
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("ascii")
+        return f"data:font/woff2;base64,{encoded}"
+    except Exception:
+        # Пустая строка → шрифт просто не подгрузится, останется системный fallback.
+        return ""
+
+
+def _font_faces_css() -> str:
+    """Возвращает @font-face-объявления для Nunito (встроены как base64)."""
+    return (
+        "@font-face { font-family: 'Nunito'; "
+        f"src: url({_font_data_uri('nunito-400.woff2')}) format('woff2'); "
+        "font-weight: 400; }\n"
+        "@font-face { font-family: 'Nunito'; "
+        f"src: url({_font_data_uri('nunito-700.woff2')}) format('woff2'); "
+        "font-weight: 700; }\n"
+        "@font-face { font-family: 'Nunito'; "
+        f"src: url({_font_data_uri('nunito-800.woff2')}) format('woff2'); "
+        "font-weight: 800; }"
+    )
+
+
 # ── Общий CSS для всех диалогов (палитра в духе Anki) ──────────────────────
 
-SHARED_DIALOG_CSS = """  * { margin: 0; padding: 0; box-sizing: border-box; }
+SHARED_DIALOG_CSS = """__FONT_FACES__
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-family: 'Nunito', -apple-system, "Segoe UI", sans-serif;
     background: __BG_COLOR__;
     display: flex;
     flex-direction: column;
@@ -242,6 +275,7 @@ def _apply_theme_colors(css: str, colors: Dict[str, str]) -> str:
     """Подставляет цвета темы в CSS-шаблон через маркеры __KEY__."""
     return (
         css
+        .replace("__FONT_FACES__", _font_faces_css())
         .replace("__BG_COLOR__", colors.get("bg", DEFAULT_THEME_COLORS["bg"]))
         .replace("__FRAME_BG_COLOR__", colors.get("frame_bg", DEFAULT_THEME_COLORS["frame_bg"]))
         .replace("__TEXT_COLOR__", colors.get("text", DEFAULT_THEME_COLORS["text"]))
