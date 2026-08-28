@@ -295,6 +295,23 @@ def test_stats_tabbed_anomaly_shows_again_rate():
     assert "Доля ошибок" in html
 
 
+def test_stats_tabbed_main_tab_metric_titles_are_headers():
+    """Названия показателей во вкладке «Главное» используют класс metric-title."""
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="main",
+        image_filename="neutral.png",
+    )
+    assert 'class="metric-title"' in html
+    assert "metric-title" in html
+    # CSS-правило для заголовка присутствует
+    assert ".stats-container .metric-title" in html
+
+
 def test_stats_tabbed_summary_tab():
     """Вкладка «Итог» показывает оценку и комментарий."""
     metrics = make_test_metrics()

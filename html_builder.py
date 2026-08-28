@@ -589,7 +589,13 @@ __CSS__
   .tab-btn:last-child { border-radius:0 10px 10px 0; }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
   .stats-container { text-align:center; padding:10px 0; }
-  .metric-name { font-size:13px; color:__TEXT_COLOR__; opacity:0.7; margin-bottom:4px; }
+  .stats-container .metric-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    color: __TEXT_COLOR__;
+    margin-bottom: 4px;
+  }
   .metric-value { font-size:36px; font-weight:700; color:__TEXT_COLOR__; margin-bottom:4px; }
   .metric-explanation { font-size:13px; color:__TEXT_COLOR__; opacity:0.8;
     line-height:1.45; margin:8px 16px; }
@@ -809,14 +815,14 @@ def _build_main_tab_content(
         value_color = _metric_color(key, value)
 
         parts.append('<div class="stats-container">')
-        parts.append(f'<div class="metric-name">{name}</div>')
+        parts.append(f'<div class="metric-title">{name}</div>')
         parts.append(f'<div class="metric-value" style="color:{value_color};">{display}</div>')
         if sparkline:
             parts.append(sparkline)
         parts.append(f'<div class="metric-explanation">{explanation}</div>')
         parts.append('</div>')
 
-    return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-name">Нет данных</div></div>'
+    return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-title">Нет данных</div></div>'
 
 
 def _build_all_tab_content(metrics: Dict[str, Any]) -> str:
