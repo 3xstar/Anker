@@ -387,13 +387,15 @@ def build_day_picker_html(
 def build_sparkline_svg(
     data: List[tuple],  # [(label, value), ...], value может быть None
     width: int = 280,
-    height: int = 60,
+    height: int = 80,
     color: str = "#0078d4",
+    value_format: str = "number",  # "percent" | "number"
 ) -> str:
     """
     Генерирует инлайновый SVG sparkline по дневным значениям метрики.
 
     Значения None (дни без данных) пропускаются — линия разрывается.
+    Над каждой точкой рисуется подпись её значения в нужном формате.
     """
     # Фильтруем только точки с данными
     points = [(i, v) for i, (_, v) in enumerate(data) if v is not None]
@@ -406,31 +408,46 @@ def build_sparkline_svg(
     v_range = max_v - min_v if max_v != min_v else 1.0
 
     padding_x = 4
-    padding_y = 4
+    # Сверху запас под подписи значений, снизу — под точки.
+    padding_top = 18
+    padding_bottom = 4
     usable_w = width - 2 * padding_x
-    usable_h = height - 2 * padding_y
+    usable_h = height - padding_top - padding_bottom
+
+    def _fmt(v: float) -> str:
+        if value_format == "percent":
+            return f"{v * 100:.0f}%"
+        if float(v).is_integer():
+            return f"{int(v)}"
+        return f"{v:.1f}"
 
     # Строим polyline points
     coords = []
     for i, v in points:
         x = padding_x + (i / (len(data) - 1)) * usable_w if len(data) > 1 else padding_x
-        y = padding_y + usable_h - ((v - min_v) / v_range) * usable_h
+        y = padding_top + usable_h - ((v - min_v) / v_range) * usable_h
         coords.append(f"{x:.1f},{y:.1f}")
 
     polyline = " ".join(coords)
 
-    # Точки на графике
+    # Точки на графике + текстовые подписи значений над каждой точкой
     dots = ""
+    labels = ""
     for i, v in points:
         x = padding_x + (i / (len(data) - 1)) * usable_w if len(data) > 1 else padding_x
-        y = padding_y + usable_h - ((v - min_v) / v_range) * usable_h
+        y = padding_top + usable_h - ((v - min_v) / v_range) * usable_h
         dots += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="{color}"/>'
+        labels += (
+            f'<text x="{x:.1f}" y="{y - 8:.1f}" font-size="10" '
+            f'text-anchor="middle" fill="{color}">{_fmt(v)}</text>'
+        )
 
     return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
      style="display:block;margin:8px auto;">
   <polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2"
    stroke-linecap="round" stroke-linejoin="round"/>
   {dots}
+  {labels}
 </svg>"""
 
 
@@ -823,7 +840,7 @@ def _build_main_tab_content(
             display = f"{value:.1f}" if isinstance(value, float) else str(value)
 
         daily = metrics.get(daily_key, []) if daily_key else []
-        sparkline = build_sparkline_svg(daily, color=color) if daily else ""
+        sparkline = build_sparkline_svg(daily, color=color, value_format="percent") if daily else ""
         explanation = explain_fn(value)
 
         value_color = _metric_color(key, value)
@@ -837,6 +854,10 @@ def _build_main_tab_content(
         parts.append('</div>')
 
     return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-title">Нет данных</div></div>'
+
+
+# Дневные ряды, значения которых хранятся как доли 0..1 (подпись в "%").
+_PERCENT_DAILY_KEYS = {"daily_retention", "daily_new_card_retention", "daily_again_rate"}
 
 
 def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
@@ -880,7 +901,8 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         if daily_key:
             daily = metrics.get(daily_key, [])
             if daily:
-                sparkline_html = build_sparkline_svg(daily)
+                value_format = "percent" if daily_key in _PERCENT_DAILY_KEYS else "number"
+                sparkline_html = build_sparkline_svg(daily, value_format=value_format)
                 detail_html = f'<div class="metric-row-detail">{sparkline_html}</div>'
         elif key == "avg_difficulty" and value is not None:
             detail_html = (

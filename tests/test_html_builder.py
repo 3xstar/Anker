@@ -487,6 +487,28 @@ def test_sparkline_single_point_returns_empty():
     assert svg == ""
 
 
+def test_sparkline_draws_value_labels():
+    data = [("15.08", 0.80), ("16.08", 0.78), ("17.08", 0.85)]
+    svg = hb.build_sparkline_svg(data)
+    assert "<text" in svg
+
+
+def test_sparkline_percent_format():
+    data = [("15.08", 0.80), ("16.08", 0.78), ("17.08", 0.85)]
+    svg = hb.build_sparkline_svg(data, value_format="percent")
+    assert "80%" in svg
+    assert "78%" in svg
+    assert "85%" in svg
+
+
+def test_sparkline_number_format():
+    data = [("15.08", 4.0), ("16.08", 5.0), ("17.08", 6.5)]
+    svg = hb.build_sparkline_svg(data, value_format="number")
+    assert ">4<" in svg
+    assert ">6.5<" in svg
+    assert "%" not in svg
+
+
 # ── Тесты: _grade_color ────────────────────────────────────────────────────
 
 def test_grade_color_best():
