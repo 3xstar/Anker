@@ -674,6 +674,22 @@ def test_all_tab_renders_individual_visualizations():
     assert "18%" in html              # donut для доли нестабильных (0.18)
 
 
+def test_all_tab_renders_chart_captions():
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="all",
+        image_filename="neutral.png",
+    )
+    assert "chart-caption" in html
+    assert "вспоминаемость по дням" in html
+    assert "Считается за последние 30 дней" in html
+    assert "уровень сложности от 0 до 10" in html
+
+
 # ── Тесты: _grade_color ────────────────────────────────────────────────────
 
 def test_grade_color_best():

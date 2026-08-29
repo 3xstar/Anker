@@ -830,13 +830,13 @@ def _load_ratio_explanation(ratio: Optional[float]) -> str:
 
 def _time_growth_explanation(growth: Optional[float]) -> str:
     if growth is None:
-        return "Недостаточно данных о времени ответа."
+        return "Недостаточно данных о времени на карточку."
     if growth > 1.3:
-        return "Время на карточку растёт — признак растущей когнитивной нагрузки."
+        return "На карточки стало уходить заметно больше времени, чем раньше, — возможно, ты устаёшь."
     if growth > 1.1:
-        return "Время на карточку немного выросло."
+        return "Время на карточку немного выросло по сравнению с прошлым периодом."
     if growth > 0.9:
-        return "Время на карточку стабильно."
+        return "Время на карточку стабильно — без резких скачков вверх или вниз."
     return "Время на карточку снижается — материал усваивается быстрее."
 
 
@@ -922,6 +922,8 @@ __CSS__
   .metric-row-name { font-size:17px; font-weight:700; color:__TEXT_COLOR__; }
   .metric-row-value { font-size:19px; font-weight:600; color:__TEXT_COLOR__; }
   .metric-row-desc { font-size:15px; color:__TEXT_COLOR__; opacity:0.6; }
+  .chart-caption { font-size:13px; color:__TEXT_COLOR__; opacity:0.55;
+    text-align:center; margin-top:4px; line-height:1.35; }
   .metric-row { display:block; cursor:pointer; user-select:none;
     padding:8px 0; border-bottom:1px solid __BORDER_COLOR__; }
   .metric-row-header { display:flex; justify-content:space-between; align-items:center; }
@@ -1156,15 +1158,26 @@ def _metric_detail_html(
 def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
-        ("Вспоминаемость", "true_retention", _retention_explanation, "%"),
-        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%"),
-        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, ""),
-        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн."),
-        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%"),
-        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, ""),
-        ("Время на карточку", "avg_time_growth", _time_growth_explanation, ""),
-        ("Регулярность", "consistency", _consistency_explanation, "%"),
-        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, ""),
+        ("Вспоминаемость", "true_retention", _retention_explanation, "%",
+         "На графике — вспоминаемость по дням, в процентах."),
+        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%",
+         "Шкала показывает долю успешно вспомненных новых карточек (0–100%). "
+         "Считается за последние 30 дней — не зависит от периода анализа."),
+        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "",
+         "Шкала показывает текущий уровень сложности от 0 до 10."),
+        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.",
+         "Шкала показывает стабильность карточек — количество дней, за которое "
+         "вспоминаемость падает до 90%."),
+        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%",
+         "Показывает, какая доля карточек ещё нестабильна (могут забыться быстро)."),
+        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, "",
+         "Сравнение количества повторений: ожидалось vs фактически было пройдено."),
+        ("Время на карточку", "avg_time_growth", _time_growth_explanation, "",
+         "Сравнение среднего времени на карточку: раньше vs сейчас (в секундах)."),
+        ("Регулярность", "consistency", _consistency_explanation, "%",
+         "На графике — количество карточек, пройденных в этот день."),
+        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "",
+         "На графике — количество карточек, застрявших в переучивании, по дням."),
     ]
 
     note = (
@@ -1175,7 +1188,7 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         f'<div class="stats-note">{note}</div>',
         '<div class="all-metrics">',
     ]
-    for name, key, explain_fn, suffix in rows_def:
+    for name, key, explain_fn, suffix, caption in rows_def:
         value = metrics.get(key)
         if value is None:
             display = "—"
@@ -1190,7 +1203,7 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         color = _metric_color(key, value)
 
         # Визуализация для сворачиваемого блока (sparkline/gauge/donut/столбцы)
-        detail_html = _metric_detail_html(key, metrics, value)
+        detail_html = _metric_detail_html(key, metrics, value, caption)
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'
