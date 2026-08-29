@@ -893,9 +893,8 @@ __CSS__
     flex:1; padding:10px 0; font-size:34px; font-family:inherit;
     background:#ffffff; color:#1f1f23; border:1px solid #c8c8ce;
     cursor:pointer; text-align:center; transition:background 0.15s;
+    border-radius: 0;
   }
-  .tab-btn:first-child { border-radius:10px 0 0 10px; }
-  .tab-btn:last-child { border-radius:0 10px 10px 0; }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
   .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:48px;
     color:__TEXT_COLOR__; text-align:left; margin-bottom:8px; }
@@ -952,10 +951,10 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
     <div class="bubble">
       __DECK_TITLE_BLOCK__
       <div class="tabs">
-        <button class="tab-btn __TAB_SUMMARY_ACTIVE__"
-         onclick="pycmd('anker:stats_tab_summary')">Итог</button>
         <button class="tab-btn __TAB_MAIN_ACTIVE__"
          onclick="pycmd('anker:stats_tab_main')">Главное</button>
+        <button class="tab-btn __TAB_SUMMARY_ACTIVE__"
+         onclick="pycmd('anker:stats_tab_summary')">Итог</button>
         <button class="tab-btn __TAB_ALL_ACTIVE__"
          onclick="pycmd('anker:stats_tab_all')">Все показатели</button>
       </div>

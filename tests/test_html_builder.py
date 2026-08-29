@@ -348,6 +348,26 @@ def test_stats_tabbed_summary_tab():
     assert "summary-score" in html
 
 
+def test_stats_tabbed_tab_order_and_default_active():
+    """Вкладки идут «Главное» → «Итог» → «Все показатели», по умолчанию активен «Итог»."""
+    metrics = make_test_metrics()
+    html = hb.build_stats_tabbed_html(
+        metrics=metrics,
+        decision_action="hold",
+        is_anomaly=False,
+        is_stable=False,
+        active_tab="summary",
+        image_filename="neutral.png",
+    )
+    main_pos = html.index('onclick="pycmd(\'anker:stats_tab_main\')"')
+    summary_pos = html.index('onclick="pycmd(\'anker:stats_tab_summary\')"')
+    all_pos = html.index('onclick="pycmd(\'anker:stats_tab_all\')"')
+    assert main_pos < summary_pos < all_pos
+    # По умолчанию активна вкладка «Итог» (единственная с классом active)
+    assert html.count('class="tab-btn active"') == 1
+    assert 'class="tab-btn active"' in html
+
+
 def test_stats_tabbed_summary_with_compare():
     """Вкладка «Итог» показывает сравнение с прошлым замером."""
     metrics = make_test_metrics()
