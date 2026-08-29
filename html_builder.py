@@ -890,14 +890,14 @@ STATS_TABBED_TEMPLATE = """<!DOCTYPE html>
 __CSS__
   .tabs { display:flex; gap:0; margin-bottom:8px; }
   .tab-btn {
-    flex:1; padding:10px 0; font-size:18px; font-family:inherit;
+    flex:1; padding:10px 0; font-size:34px; font-family:inherit;
     background:#ffffff; color:#1f1f23; border:1px solid #c8c8ce;
     cursor:pointer; text-align:center; transition:background 0.15s;
   }
   .tab-btn:first-child { border-radius:10px 0 0 10px; }
   .tab-btn:last-child { border-radius:0 10px 10px 0; }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
-  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:26px;
+  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:48px;
     color:__TEXT_COLOR__; text-align:left; margin-bottom:8px; }
   .stats-container { text-align:center; padding:10px 0; }
   .stats-container .metric-title {
@@ -941,6 +941,7 @@ __CSS__
   .summary-recommendations-empty { font-size:16px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
   /* Экран статистики — шире, чем простой диалог */
   .stats-screen .bubble-wrapper { max-width:720px; }
+  .stats-screen .bubble { max-width:720px; }
   .stats-screen .bottom-area { max-width:720px; }
 </style>
 <script>
