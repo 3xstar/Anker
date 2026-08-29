@@ -467,16 +467,28 @@ def build_gauge_svg(
     max_value: float = 10.0,
     width: int = 360,
     height: int = 100,
+    value_format: str = "number",
 ) -> str:
     """
     Горизонтальная шкала-градусник (градиент зелёный→красный слева направо)
     с маркером текущего значения и подписью значения у маркера.
+
+    Маркер зажимается в диапазон [min_value, max_value], но подпись показывает
+    фактическое значение (актуально для стабильности, где значение может
+    выходить за верхнюю границу шкалы).
     """
     if value is None:
         return ""
-    v = max(min_value, min(max_value, float(value)))
+
+    def _fmt(v: float) -> str:
+        if value_format == "percent":
+            return f"{v * 100:.0f}%"
+        return f"{v:.1f}"
+
+    raw = float(value)
+    clamped = max(min_value, min(max_value, raw))
     span = max_value - min_value
-    frac = (v - min_value) / span if span > 0 else 0.0
+    frac = (clamped - min_value) / span if span > 0 else 0.0
 
     pad = 20
     track_w = width - 2 * pad
@@ -498,7 +510,7 @@ def build_gauge_svg(
   <circle cx="{marker_x:.1f}" cy="{bar_y + bar_h / 2:.1f}" r="6"
    fill="__TEXT_COLOR__" stroke="#ffffff" stroke-width="2"/>
   <text x="{marker_x:.1f}" y="{bar_y - 8:.1f}" font-size="13" text-anchor="middle"
-   fill="__TEXT_COLOR__">{v:.1f}</text>
+   fill="__TEXT_COLOR__">{_fmt(raw)}</text>
 </svg>"""
 
 
@@ -615,6 +627,109 @@ def build_bar_pair_svg(
   {bars}
   {labels}
 </svg>"""
+
+
+# ── SVG столбчатый график по дневным точкам ────────────────────────────────
+
+def build_bar_chart_svg(
+    data: List[tuple],  # [(label, value), ...], value может быть None
+    width: int = 360,
+    height: int = 120,
+    color: str = "#0078d4",
+    value_format: str = "number",
+) -> str:
+    """
+    Столбчатый график по дневным точкам (аналог sparkline, но <rect> вместо
+    линии+точек). Значения None пропускаются. Над каждым столбцом — подпись
+    значения.
+    """
+    points = [(i, v) for i, (_, v) in enumerate(data) if v is not None]
+    if not points:
+        return ""
+
+    values = [v for _, v in points]
+    max_v = max(values) if values else 1.0
+    if max_v <= 0:
+        max_v = 1.0
+
+    padding_x = 4
+    padding_top = 18
+    padding_bottom = 4
+    usable_w = width - 2 * padding_x
+    usable_h = height - padding_top - padding_bottom
+
+    def _fmt(v: float) -> str:
+        if value_format == "percent":
+            return f"{v * 100:.0f}%"
+        if float(v).is_integer():
+            return f"{int(v)}"
+        return f"{v:.1f}"
+
+    n = len(points)
+    slot = usable_w / n if n > 1 else usable_w
+    bar_w = max(4.0, slot * 0.6)
+
+    bars = ""
+    labels = ""
+    for i, v in points:
+        x_center = padding_x + slot * i + slot / 2
+        h = (v / max_v) * usable_h
+        x = x_center - bar_w / 2
+        y = padding_top + (usable_h - h)
+        bars += (
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
+            f'rx="2" fill="{color}"/>'
+        )
+        labels += (
+            f'<text x="{x_center:.1f}" y="{y - 6:.1f}" font-size="12" '
+            f'text-anchor="middle" fill="{color}">{_fmt(v)}</text>'
+        )
+
+    return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  {bars}
+  {labels}
+</svg>"""
+
+
+# ── Единая диспетчеризация визуализации по типу метрики ────────────────────
+
+def _metric_visualization_svg(
+    key: str, metrics: Dict[str, Any], value: Optional[float]
+) -> str:
+    """
+    Возвращает SVG-визуализацию для метрики по её ключу, либо "" если
+    визуализировать нечего. Единая логика выбора используется и вкладкой
+    «Главное», и вкладкой «Все показатели», чтобы она не дублировалась.
+    """
+    if key == "true_retention":
+        return build_sparkline_svg(metrics.get("daily_retention", []), value_format="percent")
+    if key in ("again_rate_young", "again_rate_mature"):
+        return build_sparkline_svg(metrics.get("daily_again_rate", []), value_format="percent")
+    if key == "new_card_retention":
+        return build_gauge_svg(value, min_value=0.0, max_value=1.0, value_format="percent")
+    if key == "avg_difficulty":
+        return build_gauge_svg(value, min_value=0.0, max_value=10.0)
+    if key == "avg_stability":
+        return build_gauge_svg(value, min_value=0.0, max_value=60.0)
+    if key == "low_stability_ratio":
+        return build_donut_svg(value)
+    if key == "actual_vs_predicted":
+        counts = metrics.get("actual_vs_predicted_counts") or {}
+        return build_bar_pair_svg(
+            "Ожидалось", counts.get("predicted"),
+            "Фактически", counts.get("actual"),
+        )
+    if key == "avg_time_growth":
+        return build_bar_pair_svg(
+            "Раньше", metrics.get("avg_time_prev"),
+            "Сейчас", metrics.get("avg_time_per_card"),
+        )
+    if key == "consistency":
+        return build_bar_chart_svg(metrics.get("daily_review_count", []))
+    if key == "relearning_stuck":
+        return build_bar_chart_svg(metrics.get("daily_relearning_count", []))
+    return ""
 
 
 # ── Шаблоны пояснений для экрана «Почему?» ─────────────────────────────────
@@ -926,17 +1041,17 @@ def _metric_color(key: str, value: Optional[float]) -> str:
 
 # ── Определения метрик для вкладки «Главное» ────────────────────────────────
 
-# (key, name, explain_fn, suffix, daily_series_key, color)
+# (key, name, explain_fn, suffix)
 _MAIN_METRIC_DEFS: List[tuple] = [
-    ("true_retention", "Вспоминаемость", _retention_explanation, "%", "daily_retention", "#0078d4"),
-    ("new_card_retention", "Новые карточки", _new_card_retention_explanation, "%", None, "#107c10"),
-    ("avg_difficulty", "Средняя сложность", _difficulty_explanation, "", None, "#d13438"),
-    ("avg_stability", "Средняя стабильность", _stability_explanation, " дн.", None, "#0078d4"),
-    ("low_stability_ratio", "Доля нестабильных", _low_stability_explanation, "%", None, "#d13438"),
-    ("actual_vs_predicted", "Факт vs прогноз", _load_ratio_explanation, "", None, "#0078d4"),
-    ("avg_time_growth", "Время на карточку", _time_growth_explanation, "", None, "#d13438"),
-    ("consistency", "Регулярность", _consistency_explanation, "%", None, "#0078d4"),
-    ("relearning_stuck", "Застрявшие", _stuck_explanation, "", None, "#d13438"),
+    ("true_retention", "Вспоминаемость", _retention_explanation, "%"),
+    ("new_card_retention", "Новые карточки", _new_card_retention_explanation, "%"),
+    ("avg_difficulty", "Средняя сложность", _difficulty_explanation, ""),
+    ("avg_stability", "Средняя стабильность", _stability_explanation, " дн."),
+    ("low_stability_ratio", "Доля нестабильных", _low_stability_explanation, "%"),
+    ("actual_vs_predicted", "Факт vs прогноз", _load_ratio_explanation, ""),
+    ("avg_time_growth", "Время на карточку", _time_growth_explanation, ""),
+    ("consistency", "Регулярность", _consistency_explanation, "%"),
+    ("relearning_stuck", "Застрявшие", _stuck_explanation, ""),
 ]
 
 
@@ -966,12 +1081,12 @@ def _build_main_tab_content(
 
     # Собираем доступные метрики с их весами
     scored: List[tuple] = []
-    for key, name, explain_fn, suffix, daily_key, color in _MAIN_METRIC_DEFS:
+    for key, name, explain_fn, suffix in _MAIN_METRIC_DEFS:
         value = _resolve_metric_value(metrics, key)
         if value is None:
             continue
         weight = metric_weights.get(key, 0.0)
-        scored.append((weight, key, name, explain_fn, suffix, daily_key, color, value))
+        scored.append((weight, key, name, explain_fn, suffix, value))
 
     # При anomaly добавляем again_rate как приоритетную
     if is_anomaly:
@@ -987,8 +1102,6 @@ def _build_main_tab_content(
                         f"Доля ошибок ({'новые' if maturity == 'young' else 'зрелые'})",
                         _again_rate_explanation,
                         "%",
-                        "daily_again_rate",
-                        "#d13438",
                         again,
                     ))
 
@@ -997,7 +1110,7 @@ def _build_main_tab_content(
     top = scored[:5]
 
     parts: List[str] = []
-    for _, key, name, explain_fn, suffix, daily_key, color, value in top:
+    for _, key, name, explain_fn, suffix, value in top:
         if suffix == "%":
             display = f"{int(value * 100)}%"
         elif suffix == " дн.":
@@ -1005,85 +1118,53 @@ def _build_main_tab_content(
         else:
             display = f"{value:.1f}" if isinstance(value, float) else str(value)
 
-        daily = metrics.get(daily_key, []) if daily_key else []
-        sparkline = build_sparkline_svg(daily, color=color, value_format="percent") if daily else ""
+        svg = _metric_visualization_svg(key, metrics, value)
         explanation = explain_fn(value)
-
         value_color = _metric_color(key, value)
 
         parts.append('<div class="stats-container">')
         parts.append(f'<div class="metric-title">{name}</div>')
         parts.append(f'<div class="metric-value" style="color:{value_color};">{display}</div>')
-        if sparkline:
-            parts.append(sparkline)
+        if svg:
+            parts.append(svg)
         parts.append(f'<div class="metric-explanation">{explanation}</div>')
         parts.append('</div>')
 
     return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-title">Нет данных</div></div>'
 
 
-# Дневные ряды, значения которых хранятся как доли 0..1 (подпись в "%").
-_PERCENT_DAILY_KEYS = {"daily_retention", "daily_new_card_retention", "daily_again_rate"}
-
-
 def _metric_detail_html(
     key: str,
     metrics: Dict[str, Any],
     value: Optional[float],
-    daily_key: Optional[str],
+    caption: Optional[str] = None,
 ) -> str:
     """
     Возвращает HTML детализации (визуализации) для сворачиваемого блока
     конкретной метрики, либо пустую строку, если визуализировать нечего.
+    При наличии caption — выводит его под визуализацией.
     """
-    # Дневной ряд → sparkline (линейный график динамики)
-    if daily_key:
-        daily = metrics.get(daily_key, [])
-        if daily:
-            value_format = "percent" if daily_key in _PERCENT_DAILY_KEYS else "number"
-            svg = build_sparkline_svg(daily, value_format=value_format)
-            return f'<div class="metric-row-detail">{svg}</div>'
-        return ""
-
-    if value is None:
-        return ""
-
-    if key == "avg_difficulty":
-        svg = build_gauge_svg(value)
-    elif key == "avg_stability":
-        daily = metrics.get("daily_stability", [])
-        svg = build_sparkline_svg(daily, value_format="number") if daily else ""
-    elif key == "low_stability_ratio":
-        svg = build_donut_svg(value)
-    elif key == "actual_vs_predicted":
-        counts = metrics.get("actual_vs_predicted_counts") or {}
-        svg = build_bar_pair_svg(
-            "Ожидалось", counts.get("predicted"),
-            "Фактически", counts.get("actual"),
-        )
-    elif key == "avg_time_growth":
-        daily = metrics.get("daily_time", [])
-        svg = build_sparkline_svg(daily, value_format="number") if daily else ""
-    else:
-        return ""
-
+    svg = _metric_visualization_svg(key, metrics, value)
     if not svg:
         return ""
-    return f'<div class="metric-row-detail">{svg}</div>'
+    parts = [svg]
+    if caption:
+        parts.append(f'<div class="chart-caption">{caption}</div>')
+    return f'<div class="metric-row-detail">{"".join(parts)}</div>'
 
 
 def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
-        ("Вспоминаемость", "true_retention", _retention_explanation, "%", "daily_retention"),
-        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%", "daily_new_card_retention"),
-        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "", None),
-        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.", None),
-        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%", None),
-        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, "", None),
-        ("Время на карточку", "avg_time_growth", _time_growth_explanation, "", None),
-        ("Регулярность", "consistency", _consistency_explanation, "%", "daily_review_count"),
-        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "", "daily_relearning_count"),
+        ("Вспоминаемость", "true_retention", _retention_explanation, "%"),
+        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%"),
+        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, ""),
+        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн."),
+        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%"),
+        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, ""),
+        ("Время на карточку", "avg_time_growth", _time_growth_explanation, ""),
+        ("Регулярность", "consistency", _consistency_explanation, "%"),
+        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, ""),
     ]
 
     note = (
@@ -1094,7 +1175,7 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         f'<div class="stats-note">{note}</div>',
         '<div class="all-metrics">',
     ]
-    for name, key, explain_fn, suffix, daily_key in rows_def:
+    for name, key, explain_fn, suffix in rows_def:
         value = metrics.get(key)
         if value is None:
             display = "—"
@@ -1109,7 +1190,7 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         color = _metric_color(key, value)
 
         # Визуализация для сворачиваемого блока (sparkline/gauge/donut/столбцы)
-        detail_html = _metric_detail_html(key, metrics, value, daily_key)
+        detail_html = _metric_detail_html(key, metrics, value)
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'

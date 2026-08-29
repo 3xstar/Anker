@@ -297,6 +297,7 @@ def collect_metrics(
         "actual_vs_predicted": None,
         "actual_vs_predicted_counts": None,  # {"actual": N, "predicted": M}
         "avg_time_per_card": None,
+        "avg_time_prev": None,
         "avg_time_growth": None,
         "consistency": None,
         "relearning_stuck": 0,
@@ -350,7 +351,7 @@ def collect_metrics(
     }
 
     # 6. Время на карточку (period vs предыдущий period)
-    metrics["avg_time_per_card"], metrics["avg_time_growth"] = _time_per_card(
+    metrics["avg_time_per_card"], metrics["avg_time_prev"], metrics["avg_time_growth"] = _time_per_card(
         revlog, today, period
     )
 
@@ -496,10 +497,12 @@ def _actual_vs_predicted_counts(
 
 def _time_per_card(
     revlog: Sequence[Dict[str, Any]], today: datetime.date, period: int
-) -> Tuple[Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
     """
-    Среднее время на карточку (в секундах) за последние period дней и рост
-    относительно предыдущих period дней (отношение).
+    Возвращает (avg_recent, avg_prev, growth) — среднее время на карточку
+    (в секундах) за последние period дней, за предыдущие period дней и рост
+    между ними (отношение). Нужно для парной столбчатой диаграммы
+    «Раньше vs Сейчас».
     """
     recent_start = today - datetime.timedelta(days=period)
     prev_start = today - datetime.timedelta(days=period * 2)
@@ -515,16 +518,10 @@ def _time_per_card(
         if prev_start <= r["day"] < recent_start and r["time"] > 0
     ]
 
-    if recent_times:
-        avg_recent = sum(recent_times) / len(recent_times)
-    else:
-        avg_recent = None
-    if prev_times and recent_times:
-        avg_prev = sum(prev_times) / len(prev_times)
-        growth = avg_recent / avg_prev if avg_prev > 0 else None
-    else:
-        growth = None
-    return avg_recent, growth
+    avg_recent = sum(recent_times) / len(recent_times) if recent_times else None
+    avg_prev = sum(prev_times) / len(prev_times) if prev_times else None
+    growth = avg_recent / avg_prev if (avg_recent is not None and avg_prev) else None
+    return avg_recent, avg_prev, growth
 
 
 def _consistency(

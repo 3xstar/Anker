@@ -529,10 +529,16 @@ def test_gauge_generates_svg():
     assert "5.5" in svg
 
 
-def test_gauge_clamps_out_of_range():
+def test_gauge_clamps_marker_but_shows_actual_value():
     svg = hb.build_gauge_svg(25.0)
     assert "<svg" in svg
-    assert "10.0" in svg  # зажато к max_value
+    # Подпись показывает фактическое значение, а маркер зажимается к max_value.
+    assert "25.0" in svg
+
+
+def test_gauge_percent_format():
+    svg = hb.build_gauge_svg(0.75, min_value=0.0, max_value=1.0, value_format="percent")
+    assert "75%" in svg
 
 
 # ── Тесты: build_donut_svg ─────────────────────────────────────────────────
@@ -574,6 +580,76 @@ def test_bar_pair_single_value():
     svg = hb.build_bar_pair_svg("Ожидалось", None, "Фактически", 80)
     assert "<svg" in svg
     assert "—" in svg
+
+
+# ── Тесты: build_bar_chart_svg ─────────────────────────────────────────────
+
+def test_bar_chart_empty_on_no_data():
+    assert hb.build_bar_chart_svg([("01.01", None), ("02.01", None)]) == ""
+
+
+def test_bar_chart_generates_svg():
+    data = [("15.08", 153), ("16.08", 139), ("17.08", 147)]
+    svg = hb.build_bar_chart_svg(data)
+    assert "<svg" in svg
+    assert "<rect" in svg
+    assert "<text" in svg
+    assert "153" in svg
+    assert "139" in svg
+
+
+def test_bar_chart_single_point():
+    svg = hb.build_bar_chart_svg([("15.08", 42)])
+    assert "<svg" in svg
+    assert "42" in svg
+
+
+# ── Тесты: единая диспетчеризация визуализаций ─────────────────────────────
+
+def test_dispatch_retention_uses_sparkline():
+    metrics = make_test_metrics()
+    svg = hb._metric_visualization_svg("true_retention", metrics, 0.78)
+    assert "<polyline" in svg  # линия, а не столбцы
+
+
+def test_dispatch_new_cards_uses_gauge_percent():
+    metrics = make_test_metrics()
+    svg = hb._metric_visualization_svg("new_card_retention", metrics, 0.75)
+    assert "linearGradient" in svg
+    assert "75%" in svg
+
+
+def test_dispatch_stability_uses_gauge():
+    metrics = make_test_metrics()
+    svg = hb._metric_visualization_svg("avg_stability", metrics, 8.0)
+    assert "linearGradient" in svg
+    assert "8.0" in svg
+
+
+def test_dispatch_time_uses_bar_pair():
+    metrics = make_test_metrics()
+    metrics["avg_time_per_card"] = 16.5
+    metrics["avg_time_prev"] = 14.5
+    svg = hb._metric_visualization_svg("avg_time_growth", metrics, 1.1)
+    assert "Раньше" in svg
+    assert "Сейчас" in svg
+    assert "<rect" in svg
+
+
+def test_dispatch_consistency_uses_bar_chart():
+    metrics = make_test_metrics()
+    metrics["daily_review_count"] = [("15.08", 153), ("16.08", 139)]
+    svg = hb._metric_visualization_svg("consistency", metrics, 0.65)
+    assert "<rect" in svg
+    assert "<polyline" not in svg
+
+
+def test_dispatch_stuck_uses_bar_chart():
+    metrics = make_test_metrics()
+    metrics["daily_relearning_count"] = [("15.08", 2), ("16.08", 3)]
+    svg = hb._metric_visualization_svg("relearning_stuck", metrics, 4)
+    assert "<rect" in svg
+    assert "<polyline" not in svg
 
 
 # ── Тесты: визуализации во вкладке «Все показатели» ────────────────────────
