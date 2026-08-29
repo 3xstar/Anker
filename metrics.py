@@ -237,6 +237,19 @@ def fetch_fsrs_memory_state(
     return result
 
 
+def _recent_card_ids(
+    revlog: Sequence[Dict[str, Any]], since_day: datetime.date
+) -> List[int]:
+    """
+    ID карточек, у которых было хотя бы одно повторение начиная с since_day.
+
+    Используется, чтобы FSRS-метрики (сложность/стабильность) считались только
+    по карточкам, с которыми пользователь реально взаимодействовал в периоде
+    анализа, а не по всей колоде целиком.
+    """
+    return sorted({r["cid"] for r in revlog if r["day"] >= since_day})
+
+
 # ── Оркестратор сбора всех метрик ──────────────────────────────────────────
 
 def collect_metrics(
@@ -270,7 +283,6 @@ def collect_metrics(
     since_day = today - datetime.timedelta(days=history_window_days)
 
     revlog = fetch_revlog_rows(col, deck_ids, since_day, cutoff_hour)
-    cards = fetch_card_rows(col, deck_ids)
 
     metrics: Dict[str, Any] = {
         "history_days": _count_history_days(revlog, today),
@@ -312,9 +324,11 @@ def collect_metrics(
         revlog, today, period, mature=True
     )
 
-    # 4. Сложность и стабильность FSRS (graceful fallback на SM-2)
-    card_ids = [c["id"] for c in cards]
-    fsrs = fetch_fsrs_memory_state(col, card_ids)
+    # 4. Сложность и стабильность FSRS — только по карточкам, у которых было
+    # хотя бы одно повторение в течение периода анализа. Иначе среднее
+    # размывается карточками, которые не трогали месяцами.
+    recent_start = today - datetime.timedelta(days=period)
+    fsrs = fetch_fsrs_memory_state(col, _recent_card_ids(revlog, recent_start))
     if fsrs:
         difficulties = [d for d, _ in fsrs.values() if d is not None]
         stabilities = [s for _, s in fsrs.values() if s is not None]
