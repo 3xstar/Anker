@@ -270,10 +270,16 @@ def collect_metrics(
     Returns:
         Словарь с сырыми значениями метрик (см. ключи ниже).
     """
-    if today is None:
-        today = datetime.date.today()
-
     cutoff_hour = int(config.get("day_cutoff_hour", DEFAULT_DAY_CUTOFF_HOUR))
+    if today is None:
+        # Anki-день начинается в cutoff_hour (по умолчанию 4:00).
+        # Если сейчас раньше cutoff — Anki-«сегодня» ещё вчерашняя дата.
+        now = datetime.datetime.now()
+        day_start = now.replace(hour=cutoff_hour, minute=0, second=0, microsecond=0)
+        if now < day_start:
+            today = (day_start - datetime.timedelta(days=1)).date()
+        else:
+            today = now.date()
     # Период анализа не может быть меньше 2 дней — иначе графикам не хватает
     # точек для построения динамики.
     period = max(2, int(config.get("analysis_period_days", 7)))
@@ -301,6 +307,8 @@ def collect_metrics(
         "avg_time_growth": None,
         "consistency": None,
         "relearning_stuck": 0,
+        "stuck_today": 0,
+        "healthy_today": 0,
         "daily_retention": [],  # [(day_label, retention), ...] для sparkline
         "daily_again_rate": [],  # [(day_label, again_rate), ...]
         "daily_new_card_retention": [],
@@ -358,15 +366,33 @@ def collect_metrics(
     # 7. Consistency нагрузки по дням
     metrics["consistency"] = _consistency(revlog, today, period)
 
-    # 8. Застрявшие в переучивании
-    metrics["relearning_stuck"] = _relearning_stuck(revlog, today, period)
+    # 8. Застрявшие в переучивании — заголовок и график теперь считаются
+    # ОДНОЙ и той же функцией (_relearning_stuck), просто график показывает
+    # это же значение для каждого дня периода, а заголовок — для последнего
+    # дня (последняя точка ряда). Раньше график использовал сырое количество
+    # relearning-повторений за день — другую, не связанную величину, из-за
+    # чего заголовок и график могли показывать 0 и ненулевое значение
+    # одновременно и создавали путаницу.
+    metrics["daily_relearning_count"] = _daily_relearning_stuck_series(revlog, today, period)
+    metrics["relearning_stuck"] = (
+        int(metrics["daily_relearning_count"][-1][1])
+        if metrics["daily_relearning_count"] else 0
+    )
+    # Разбивка на сегодня для круговой диаграммы (застрявшие vs в порядке
+    # среди карточек, пройденных именно сегодня) — наглядная альтернатива
+    # столбчатому графику по дням.
+    metrics["stuck_today"], metrics["healthy_today"] = _relearning_stuck_breakdown_today(
+        revlog, today, period
+    )
+    total_cards_in_period = len({r["cid"] for r in revlog if r["day"] >= today - datetime.timedelta(days=period)})
+    total_stuck_in_period = metrics["relearning_stuck"]  # уже есть
+    metrics["total_healthy_in_period"] = max(0, total_cards_in_period - total_stuck_in_period)
 
     # 9. Дневные ряды для sparkline-графиков
     metrics["daily_retention"] = _daily_retention_series(revlog, today, period)
     metrics["daily_again_rate"] = _daily_again_rate_series(revlog, today, period)
     metrics["daily_new_card_retention"] = _daily_new_card_retention_series(revlog, today, 30)
     metrics["daily_review_count"] = _daily_review_count_series(revlog, today, period)
-    metrics["daily_relearning_count"] = _daily_relearning_count_series(revlog, today, period)
     metrics["daily_stability"] = _daily_stability_series(revlog, today, period)
     metrics["daily_time"] = _daily_time_series(revlog, today, period)
 
@@ -567,6 +593,51 @@ def _relearning_stuck(
     return sum(1 for count in relearn_count.values() if count > 2)
 
 
+def _relearning_stuck_breakdown_today(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> tuple:
+    """
+    Разбивка «Застрявшие карточки» на сегодня: сколько карточек, пройденных
+    сегодня, оказались «застрявшими» (>2 relearning-событий за window_days
+    дней, включая сегодня), и сколько — нет («в порядке»).
+
+    Возвращает (stuck_count, healthy_count) — обе величины про КАРТОЧКИ,
+    пройденные именно сегодня, чтобы круговая диаграмма показывала честное
+    соотношение «сколько из того, что ты сегодня прошёл, застряло».
+    """
+    start = today - datetime.timedelta(days=window_days)
+    relearn_count: Dict[int, int] = {}
+    for r in revlog:
+        if r["type"] != REVLOG_TYPE_RELEARN:
+            continue
+        if start <= r["day"] <= today:
+            relearn_count[r["cid"]] = relearn_count.get(r["cid"], 0) + 1
+    stuck_ids = {cid for cid, count in relearn_count.items() if count > 2}
+
+    reviewed_today = {r["cid"] for r in revlog if r["day"] == today}
+    stuck_today = len(reviewed_today & stuck_ids)
+    healthy_today = len(reviewed_today) - stuck_today
+    return stuck_today, healthy_today
+
+
+def _daily_relearning_stuck_series(
+    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
+) -> List[tuple]:
+    """
+    Дневной ряд «застрявших» карточек — та же величина, что и заголовочное
+    число _relearning_stuck, просто посчитанная отдельно для каждого дня
+    в периоде (окно в window_days дней, заканчивающееся этим днём), а не
+    только для сегодня. Заголовок показателя равен последней точке этого
+    ряда — они физически не могут разойтись, потому что считаются одной
+    и той же функцией с одним и тем же определением «застрявшей» карточки.
+    """
+    result = []
+    for offset in range(window_days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        result.append((day.strftime("%d.%m"), float(_relearning_stuck(revlog, day, window_days))))
+    return result
+
+
 def _daily_retention_series(
     revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
 ) -> List[tuple]:
@@ -657,22 +728,6 @@ def _daily_review_count_series(
         count = sum(
             1 for r in revlog
             if r["type"] in (REVLOG_TYPE_REVIEW, REVLOG_TYPE_RELEARN)
-            and r["day"] == day
-        )
-        result.append((day.strftime("%d.%m"), float(count) if count > 0 else None))
-    return result
-
-
-def _daily_relearning_count_series(
-    revlog: Sequence[Dict[str, Any]], today: datetime.date, window_days: int
-) -> List[tuple]:
-    """Дневное количество переучиваний за window_days дней."""
-    result = []
-    for offset in range(window_days - 1, -1, -1):
-        day = today - datetime.timedelta(days=offset)
-        count = sum(
-            1 for r in revlog
-            if r["type"] == REVLOG_TYPE_RELEARN
             and r["day"] == day
         )
         result.append((day.strftime("%d.%m"), float(count) if count > 0 else None))

@@ -21,6 +21,7 @@ html_builder.py — чистая генерация HTML для диалогов
 import base64
 import math
 import os
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -92,14 +93,39 @@ def _font_faces_css() -> str:
 
 SHARED_DIALOG_CSS = """__FONT_FACES__
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    /* Убирает страничный скроллбар окна целиком — единственная нужная
+       прокрутка (для длинных списков показателей) реализована отдельно
+       через .tab-content-scroll с собственным overflow-y:auto. */
+    overflow: hidden;
+    height: 100%;
+  }
   body {
+    position: relative;
     font-family: 'Nunito', -apple-system, "Segoe UI", sans-serif;
     background: __BG_COLOR__;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px;
+    padding: 0;
   }
+  /* Вертикальное положение содержимого простого диалога — ПРОСТОЙ,
+     предсказуемый фиксированный отступ сверху в пикселях, а не
+     flex/grid/absolute-центрирование (два предыдущих подхода на практике
+     давали асимметричный результат в этом окружении). Окно диалога имеет
+     строго фиксированную высоту 440px (см. DIALOG_SIZE в mascot_ui.py).
+
+     РУЧНАЯ ПОДСТРОЙКА: если отступ снизу визуально больше/меньше отступа
+     сверху — поменяй ЧИСЛО в margin-top ниже. Увеличить число — сдвинуть
+     содержимое ВНИЗ. Уменьшить — сдвинуть ВВЕРХ. Больше в файле ничего
+     трогать не нужно, это единственное значение, отвечающее за положение. */
+  .dialog-content {
+    width: 100%;
+    max-width: 420px;
+    margin: 60px auto 0 auto;
+    padding: 0 20px;
+    box-sizing: border-box;
+  }
+  /* Экран статистики не использует .dialog-content — там своя вёрстка
+     (см. body.stats-screen ниже), растянутая на всю ширину и прижатая
+     кверху/центрированная отдельно под контент, который может быть длиннее. */
 
   /* ── Спич-бабл ── */
   .bubble-wrapper {
@@ -223,6 +249,7 @@ __CSS__
 </style>
 </head>
 <body>
+  <div class="dialog-content">
   <div class="bubble-wrapper">
     <div class="bubble">__MESSAGE__</div>
   </div>
@@ -236,6 +263,7 @@ __CSS__
   </div>
   <div class="stats-link-row">
     <button class="btn-link" onclick="pycmd('anker:show_stats')">__STATS_BUTTON_LABEL__</button>
+  </div>
   </div>
 </body>
 </html>"""
@@ -251,6 +279,7 @@ __CSS__
   .day-checkboxes label { display:inline-block; margin:4px 8px; cursor:pointer; font-size:14px; }
 </style></head>
 <body>
+  <div class="dialog-content">
   <div class="bubble-wrapper">
     <div class="bubble">
       __MESSAGE__
@@ -263,6 +292,7 @@ __CSS__
       <button class="btn primary" onclick="pycmd('anker:days_done')">Готово</button>
       <button class="btn" onclick="pycmd('anker:days_cancel')">Отмена</button>
     </div>
+  </div>
   </div>
 </body></html>"""
 
@@ -415,7 +445,7 @@ def build_sparkline_svg(
     max_v = max(values)
     v_range = max_v - min_v if max_v != min_v else 1.0
 
-    padding_x = 4
+    padding_x = 20
     # Сверху запас под подписи значений, снизу — под точки.
     padding_top = 18
     padding_bottom = 4
@@ -468,6 +498,7 @@ def build_gauge_svg(
     width: int = 360,
     height: int = 100,
     value_format: str = "number",
+    reverse: bool = False,
 ) -> str:
     """
     Горизонтальная шкала-градусник (градиент зелёный→красный слева направо)
@@ -476,6 +507,9 @@ def build_gauge_svg(
     Маркер зажимается в диапазон [min_value, max_value], но подпись показывает
     фактическое значение (актуально для стабильности, где значение может
     выходить за верхнюю границу шкалы).
+
+    reverse=True меняет порядок стопов на красный→зелёный (для метрик, где
+    больше = лучше: новые карточки, стабильность).
     """
     if value is None:
         return ""
@@ -496,17 +530,29 @@ def build_gauge_svg(
     bar_y = height / 2 - bar_h / 2
     marker_x = pad + frac * track_w
 
+    grad_id = f"gauge-grad-{uuid.uuid4().hex[:8]}"
+    if reverse:
+        stops = (
+            '<stop offset="0%" stop-color="#d13438"/>'
+            '<stop offset="50%" stop-color="#e8c93a"/>'
+            '<stop offset="100%" stop-color="#107c10"/>'
+        )
+    else:
+        stops = (
+            '<stop offset="0%" stop-color="#107c10"/>'
+            '<stop offset="50%" stop-color="#e8c93a"/>'
+            '<stop offset="100%" stop-color="#d13438"/>'
+        )
+
     return f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"
      style="display:block;margin:8px auto;">
   <defs>
-    <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#107c10"/>
-      <stop offset="50%" stop-color="#e8c93a"/>
-      <stop offset="100%" stop-color="#d13438"/>
+    <linearGradient id="{grad_id}" x1="0" y1="0" x2="1" y2="0">
+      {stops}
     </linearGradient>
   </defs>
   <rect x="{pad:.1f}" y="{bar_y:.1f}" width="{track_w:.1f}" height="{bar_h:.1f}"
-   rx="{bar_h / 2:.1f}" fill="url(#gauge-grad)"/>
+   rx="{bar_h / 2:.1f}" fill="url(#{grad_id})"/>
   <circle cx="{marker_x:.1f}" cy="{bar_y + bar_h / 2:.1f}" r="6"
    fill="__TEXT_COLOR__" stroke="#ffffff" stroke-width="2"/>
   <text x="{marker_x:.1f}" y="{bar_y - 8:.1f}" font-size="13" text-anchor="middle"
@@ -554,6 +600,60 @@ def build_donut_svg(
    text-anchor="middle" dominant-baseline="central"
    fill="__TEXT_COLOR__">{int(ratio * 100)}%</text>
 </svg>"""
+
+
+def build_count_donut_svg(
+    part_value: int,
+    rest_value: int,
+    part_label: str,
+    rest_label: str,
+    part_color: str = "#d13438",
+    rest_color: str = "#107c10",
+    size: int = 170,
+) -> str:
+    """
+    Кольцевая диаграмма с абсолютными количествами (не процентом): два
+    сегмента, подписанные конкретными числами через легенду под кольцом.
+    Используется, когда важно видеть именно «сколько из скольки», а не
+    только долю в процентах (например «Застрявшие карточки»: сколько из
+    пройденных сегодня карточек застряло, а сколько в порядке).
+    """
+    total = part_value + rest_value
+    if total <= 0:
+        return (
+            '<div class="chart-empty-note">'
+            'Сегодня ещё нет пройденных карточек для этого графика.</div>'
+        )
+
+    ratio = part_value / total
+    stroke_w = 14
+    cx = cy = size / 2
+    r = (size - stroke_w) / 2
+    circumference = 2 * math.pi * r
+    part_len = ratio * circumference
+    rest_len = (1.0 - ratio) * circumference
+
+    return f"""<svg width="{size}" height="{size}" xmlns="http://www.w3.org/2000/svg"
+     style="display:block;margin:8px auto;">
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="#e0e0e0"
+   stroke-width="{stroke_w}" fill="none"/>
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="{rest_color}"
+   stroke-width="{stroke_w}" fill="none"
+   stroke-dasharray="{rest_len:.1f} {circumference:.1f}" stroke-dashoffset="0"
+   transform="rotate(-90 {cx:.1f} {cy:.1f})"/>
+  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" stroke="{part_color}"
+   stroke-width="{stroke_w}" fill="none"
+   stroke-dasharray="{part_len:.1f} {circumference:.1f}"
+   stroke-dashoffset="{-rest_len:.1f}"
+   transform="rotate(-90 {cx:.1f} {cy:.1f})"/>
+  <text x="{cx:.1f}" y="{cy:.1f}" font-size="22" font-weight="800"
+   text-anchor="middle" dominant-baseline="central"
+   fill="__TEXT_COLOR__">{total}</text>
+</svg>
+<div class="donut-legend">
+  <span><i style="background:{part_color};"></i>{part_label}: {part_value}</span>
+  <span><i style="background:{rest_color};"></i>{rest_label}: {rest_value}</span>
+</div>"""
 
 
 # ── SVG парная столбчатая диаграмма ────────────────────────────────────────
@@ -707,11 +807,11 @@ def _metric_visualization_svg(
     if key in ("again_rate_young", "again_rate_mature"):
         return build_sparkline_svg(metrics.get("daily_again_rate", []), value_format="percent")
     if key == "new_card_retention":
-        return build_gauge_svg(value, min_value=0.0, max_value=1.0, value_format="percent")
+        return build_gauge_svg(value, min_value=0.0, max_value=1.0, value_format="percent", reverse=True)
     if key == "avg_difficulty":
         return build_gauge_svg(value, min_value=0.0, max_value=10.0)
     if key == "avg_stability":
-        return build_gauge_svg(value, min_value=0.0, max_value=60.0)
+        return build_gauge_svg(value, min_value=0.0, max_value=60.0, reverse=True)
     if key == "low_stability_ratio":
         return build_donut_svg(value)
     if key == "actual_vs_predicted":
@@ -728,8 +828,15 @@ def _metric_visualization_svg(
     if key == "consistency":
         return build_bar_chart_svg(metrics.get("daily_review_count", []))
     if key == "relearning_stuck":
-        return build_bar_chart_svg(metrics.get("daily_relearning_count", []))
-    return ""
+        # БЕРЁМ ЗА ВЕСЬ ПЕРИОД, А НЕ ТОЛЬКО ЗА СЕГОДНЯ
+        total_stuck = int(metrics.get("relearning_stuck") or 0)
+        total_healthy = int(metrics.get("total_healthy_in_period") or 0)  # нужно добавить в metrics
+        return build_count_donut_svg(
+            part_value=total_stuck,
+            rest_value=total_healthy,
+            part_label="Застряли",
+            rest_label="В порядке",
+        )
 
 
 # ── Шаблоны пояснений для экрана «Почему?» ─────────────────────────────────
@@ -896,7 +1003,7 @@ __CSS__
     border-radius: 0;
   }
   .tab-btn.active { background:#0078d4; border-color:#0067b8; color:#ffffff; font-weight:600; }
-  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:48px;
+  .stats-deck-title { font-family:'Nunito',sans-serif; font-weight:700; font-size:24px;
     color:__TEXT_COLOR__; text-align:left; margin-bottom:8px; }
   .stats-container { text-align:center; padding:10px 0; }
   .stats-container .metric-title {
@@ -913,7 +1020,7 @@ __CSS__
   /* Внутренний скролл содержимого вкладки: окно фиксировано, поэтому
      длинный контент (несколько развёрнутых показателей) скроллится только
      внутри, не растягивая окно. */
-  .tab-content-scroll { max-height:480px; overflow-y:auto; }
+  .tab-content-scroll { max-height:420px; overflow-y:auto; }
   .stats-note { font-size:15px; color:__TEXT_COLOR__; opacity:0.55;
     padding:4px 0 8px 0; line-height:1.35; }
   .metric-row { display:flex; justify-content:space-between; align-items:center;
@@ -923,6 +1030,12 @@ __CSS__
   .metric-row-desc { font-size:15px; color:__TEXT_COLOR__; opacity:0.6; }
   .chart-caption { font-size:13px; color:__TEXT_COLOR__; opacity:0.55;
     text-align:center; margin-top:4px; line-height:1.35; }
+  .donut-legend { display:flex; justify-content:center; gap:16px;
+    font-size:14px; color:__TEXT_COLOR__; margin-top:2px; }
+  .donut-legend i { display:inline-block; width:10px; height:10px;
+    border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .chart-empty-note { font-size:14px; color:__TEXT_COLOR__; opacity:0.6;
+    text-align:center; padding:20px 0; }
   .metric-row { display:block; cursor:pointer; user-select:none;
     padding:8px 0; border-bottom:1px solid __BORDER_COLOR__; }
   .metric-row-header { display:flex; justify-content:space-between; align-items:center; }
@@ -930,7 +1043,9 @@ __CSS__
   .metric-row.expanded .metric-row-detail { display:block; }
   .summary-tab-content { display:flex; flex-direction:column;
     justify-content:center; align-items:center; min-height:100%; }
-  .summary-score { font-size:64px; font-weight:800; margin:8px 0; }
+  .summary-score { font-size:32px; font-weight:800; margin:8px 0; }
+  .summary-period-subtitle { font-size:16px; font-weight:700; color:__TEXT_COLOR__;
+    opacity:0.7; margin-bottom:4px; }
   .summary-comment { font-size:19px; color:__TEXT_COLOR__; line-height:1.45; margin:8px 16px; }
   .summary-compare { font-size:16px; color:__TEXT_COLOR__; opacity:0.65; margin-top:8px; }
   .summary-recommendations { margin:12px 16px; text-align:left; }
@@ -938,17 +1053,58 @@ __CSS__
   .summary-recommendations-list { padding-left:18px; margin:0; }
   .summary-recommendations-list li { font-size:16px; color:__TEXT_COLOR__; line-height:1.4; margin-bottom:4px; }
   .summary-recommendations-empty { font-size:16px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
-  /* Экран статистики — шире, чем простой диалог */
-  .stats-screen .bubble-wrapper { max-width:720px; }
-  .stats-screen .bubble { max-width:720px; }
-  .stats-screen .bottom-area { max-width:720px; }
+  /* Аналитическая панель для экрана статистики — независима от .bubble */
+  .stats-panel {
+    width: 100%;
+    background: __FRAME_BG_COLOR__;
+    border: 2px solid __BORDER_COLOR__;
+    border-radius: 16px;
+    padding: 20px 28px;
+    box-sizing: border-box;
+    color: __TEXT_COLOR__;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  /* Экран статистики: body растягивает дочерние блоки на всю ширину и
+     центрируется по вертикали — панель со статистикой + маскот + кнопка
+     «Назад» должны целиком помещаться в окно без страничного скролла. */
+  /* Экран статистики: свой flex-контейнер (базовое правило body больше не
+     задаёт display:flex — оно нужно только здесь). Положение по вертикали —
+     тем же простым способом фиксированного отступа в пикселях, что и у
+     обычного диалога (см. .dialog-content выше) — а не justify-content,
+     который на практике не дал симметричных отступов сверху/снизу в этом
+     окружении.
+
+     РУЧНАЯ ПОДСТРОЙКА: если отступ снизу больше отступа сверху — увеличь
+     max-height у .tab-content-scroll (это раздвинет панель со статистикой
+     вниз, заполнив пустое место) или увеличь margin-top ниже. Если наоборот
+     сверху пусто — уменьши эти значения. */
+  body.stats-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 20px;
+    margin-top: 0;
+  }
+  body.stats-screen .bottom-area {
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 12px;
+  }
+  /* Персонаж в экране статистики уменьшен — панель с данными и так занимает
+     основное место, крупный маскот здесь не нужен и не должен вытеснять
+     кнопку «Назад» за пределы окна. */
+  body.stats-screen .character img {
+    width: 72px;
+  }
 </style>
 <script>
 function toggleMetricRow(el) { el.classList.toggle('expanded'); }
 </script></head>
 <body class="__BODY_CLASS__">
-  <div class="bubble-wrapper">
-    <div class="bubble">
+  <div class="stats-panel">
       __DECK_TITLE_BLOCK__
       <div class="tabs">
         <button class="tab-btn __TAB_MAIN_ACTIVE__"
@@ -959,7 +1115,6 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
          onclick="pycmd('anker:stats_tab_all')">Все показатели</button>
       </div>
       <div class="tab-content-scroll">__TAB_CONTENT__</div>
-    </div>
   </div>
   <div class="bottom-area">
     <div class="character"><img src="__IMAGE_URL__" alt="Anker"></div>
@@ -1177,7 +1332,7 @@ def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
         ("Регулярность", "consistency", _consistency_explanation, "%",
          "На графике — количество карточек, пройденных в этот день."),
         ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "",
-         "На графике — количество карточек, застрявших в переучивании, по дням."),
+         "На диаграмме — сколько из карточек, пройденных сегодня, застряло, а сколько в порядке."),
     ]
 
     note = (
@@ -1285,6 +1440,7 @@ def _build_summary_tab_content(
     metrics: Dict[str, Any],
     metric_weights: Dict[str, float] | None,
     last_summary_score: Dict[str, Any] | None,
+    period: Optional[int] = None,
 ) -> str:
     """Собирает HTML для вкладки «Итог» — оценка 1-10 + сравнение с прошлым."""
     score, scored = _score_components(metrics, metric_weights)
@@ -1347,9 +1503,15 @@ def _build_summary_tab_content(
     parts = [
         '<div class="summary-tab-content">',
         '<div class="stats-container">',
-        f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:26px;">/10</span></div>',
-        f'<div class="summary-comment">{comment}</div>',
     ]
+    if period:
+        parts.append(
+            f'<div class="summary-period-subtitle">Оценка статистики за {period} дн.</div>'
+        )
+    parts.append(
+        f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:13px;">/10</span></div>'
+    )
+    parts.append(f'<div class="summary-comment">{comment}</div>')
     if compare_html:
         parts.append(f'<div class="summary-compare">{compare_html}</div>')
     parts.append(recommendations_html)
@@ -1400,7 +1562,7 @@ def build_stats_tabbed_html(
     elif active_tab == "main":
         content = _build_main_tab_content(metrics, decision_action, is_anomaly, metric_weights)
     else:
-        content = _build_summary_tab_content(metrics, metric_weights, last_summary_score)
+        content = _build_summary_tab_content(metrics, metric_weights, last_summary_score, period)
 
     deck_title_block = f'<div class="stats-deck-title">{deck_name}</div>' if deck_name else ""
 

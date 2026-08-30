@@ -160,6 +160,7 @@ class MascotDialog(QDialog):
         self._main_buttons = buttons
         self._active_stats_tab = "summary"
         self._is_stats_screen = False
+        self._size_applied = False
 
         self.setWindowTitle("Anker")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
@@ -242,10 +243,22 @@ class MascotDialog(QDialog):
         self._apply_fixed_size()
 
     def _apply_fixed_size(self) -> None:
-        """Применяет фиксированный размер окна для текущего экрана."""
+        """
+        Применяет фиксированный размер окна и центрирует его относительно
+        главного окна Anki.
+
+        Размер применяется всегда при смене экрана (диалог ↔ статистика),
+        но центрирование — только если размер реально изменился, чтобы не
+        телепортировать окно, которое пользователь уже перетащил.
+        """
+        old_size = (self.width(), self.height())
         width, height = STATS_SIZE if self._is_stats_screen else DIALOG_SIZE
         self.setFixedSize(width, height)
-        self._center_on_parent()
+
+        # Центрируем только если размер изменился (т.е. при переключении
+        # между диалогом и статистикой или при первом показе)
+        if old_size != (width, height):
+            self._center_on_parent()
 
     def _center_on_parent(self) -> None:
         """Центрирует окно относительно главного окна Anki."""

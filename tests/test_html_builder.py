@@ -687,7 +687,7 @@ def test_all_tab_renders_individual_visualizations():
         active_tab="all",
         image_filename="neutral.png",
     )
-    assert "gauge-grad" in html       # градусник для сложности
+    assert "gauge-grad-" in html      # градусник для сложности (уникальный ID)
     assert "linearGradient" in html
     assert "Ожидалось" in html        # парные столбцы для «Факт vs прогноз»
     assert "Фактически" in html
@@ -834,3 +834,35 @@ def test_summary_recommendations_absent_when_all_good():
     )
     assert "Что можно улучшить" not in html
     assert "Явных слабых мест не видно" in html
+
+
+# ── Тесты: уникальные ID градиента в build_gauge_svg ──────────────────────
+
+def test_gauge_gradient_ids_are_unique():
+    """Два вызова build_gauge_svg подряд дают разные id у <linearGradient>."""
+    svg1 = hb.build_gauge_svg(5.0)
+    svg2 = hb.build_gauge_svg(5.0)
+    import re
+    ids1 = re.findall(r'id="(gauge-grad-[a-f0-9]+)"', svg1)
+    ids2 = re.findall(r'id="(gauge-grad-[a-f0-9]+)"', svg2)
+    assert len(ids1) == 1
+    assert len(ids2) == 1
+    assert ids1[0] != ids2[0]
+
+
+# ── Тесты: параметр reverse в build_gauge_svg ──────────────────────────────
+
+def test_gauge_reverse_red_before_green():
+    """При reverse=True красный (#d13438) встречается раньше зелёного (#107c10)."""
+    svg = hb.build_gauge_svg(5.0, reverse=True)
+    red_pos = svg.index("#d13438")
+    green_pos = svg.index("#107c10")
+    assert red_pos < green_pos
+
+
+def test_gauge_default_green_before_red():
+    """При reverse=False (по умолчанию) зелёный (#107c10) встречается раньше красного (#d13438)."""
+    svg = hb.build_gauge_svg(5.0)
+    green_pos = svg.index("#107c10")
+    red_pos = svg.index("#d13438")
+    assert green_pos < red_pos
