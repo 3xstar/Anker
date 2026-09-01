@@ -32,5 +32,6 @@
   "light_mode_percent": 0.45,
   "analysis_period_days": 7,
   "day_of_week_rules": {},
-  "show_decision_log": false
+  "show_decision_log": false,
+  "language": "ru"
 }

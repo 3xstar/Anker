@@ -26,6 +26,9 @@ from .html_builder import (
     _difficulty_explanation,
 )
 from . import log
+from . import i18n
+
+t = i18n.t
 
 try:
     from aqt import mw
@@ -315,41 +318,29 @@ def show_planned_visit(
 
     if decision.action == "increase":
         image = IMG_ENTHUSIASTIC
-        message = (
-            f"Ты уверенно справляешься с колодой «{deck_name}» — "
-            f"можно немного ускориться и добавить новых карточек."
-        )
+        message = t("pv_increase_msg", deck_name=deck_name)
         buttons = [
-            {"label": "Да, давай увеличим", "action": "increase_accept", "primary": True},
-            {"label": "Пока оставим как есть", "action": "increase_decline"},
+            {"label": t("pv_increase_yes"), "action": "increase_accept", "primary": True},
+            {"label": t("pv_increase_no"), "action": "increase_decline"},
         ]
     elif decision.action == "decrease":
         image = IMG_UNDERSTANDING
-        message = (
-            f"Тебе в последнее время нелегко даются повторения колоды «{deck_name}». "
-            f"Есть смысл ненадолго снизить количество новых карточек, "
-            f"чтобы закрепить то, что уже выучено."
-        )
+        message = t("pv_decrease_msg", deck_name=deck_name)
         buttons = [
-            {"label": "Да, давай снизим", "action": "decrease_accept", "primary": True},
-            {"label": "Нет, я справлюсь", "action": "decrease_decline"},
+            {"label": t("pv_decrease_yes"), "action": "decrease_accept", "primary": True},
+            {"label": t("pv_decrease_no"), "action": "decrease_decline"},
         ]
     elif is_stable:
         image = IMG_PROUDED
-        message = (
-            f"Ты стабильно хорошо закрепляешь материал колоды «{deck_name}» — "
-            f"и уже не первую неделю. Не расслабляйся, но темп отличный!"
-        )
+        message = t("pv_stable_msg", deck_name=deck_name)
         buttons = [
-            {"label": "Спасибо!", "action": "prouded_ack", "primary": True},
+            {"label": t("pv_stable_btn"), "action": "prouded_ack", "primary": True},
         ]
     else:
         image = IMG_NEUTRAL
-        message = (
-            f"У тебя всё ровно с колодой «{deck_name}» — продолжай в своём темпе."
-        )
+        message = t("pv_neutral_msg", deck_name=deck_name)
         buttons = [
-            {"label": "Хорошо", "action": "neutral_ack", "primary": True},
+            {"label": t("pv_neutral_btn"), "action": "neutral_ack", "primary": True},
         ]
 
     dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
@@ -363,13 +354,11 @@ def show_anomaly_checkin(
 ) -> None:
     """Показывает anomaly check-in диалог. Изображение: worried.png."""
     image = IMG_WORRIED
-    message = (
-        f"Сегодня тебе явно тяжелее обычного даётся «{deck_name}». Что случилось?"
-    )
+    message = t("an_msg", deck_name=deck_name)
     buttons = [
-        {"label": "Лень / не хочется", "action": "anomaly_lazy"},
-        {"label": "Занят(а) сегодня", "action": "anomaly_busy"},
-        {"label": "Само пройдёт", "action": "anomaly_dismiss", "primary": True},
+        {"label": t("an_lazy"), "action": "anomaly_lazy"},
+        {"label": t("an_busy"), "action": "anomaly_busy"},
+        {"label": t("an_dismiss"), "action": "anomaly_dismiss", "primary": True},
     ]
     dialog = MascotDialog(image, message, buttons, on_action, stats_context=stats_context)
     dialog.exec()
@@ -381,16 +370,12 @@ def show_anomaly_lazy(
 ) -> None:
     """Реакция на «Лень / не хочется»: sad.png, предложение лёгкого режима."""
     image = IMG_SAD
-    message = (
-        f"Бывает у всех, не переживай. Давай включим для тебя временный лёгкий "
-        f"режим по «{deck_name}» — я ненадолго снижу количество новых карточек, "
-        f"а потом всё вернётся как было."
-    )
+    message = t("lazy_msg", deck_name=deck_name)
     buttons = [
-        {"label": "Лёгкий режим на 3 дня", "action": "light_3d", "primary": True},
-        {"label": "Лёгкий режим на 5 дней", "action": "light_5d"},
-        {"label": "Лёгкий режим на 7 дней", "action": "light_7d"},
-        {"label": "Не надо, я в порядке", "action": "light_decline"},
+        {"label": t("lazy_3"), "action": "light_3d", "primary": True},
+        {"label": t("lazy_5"), "action": "light_5d"},
+        {"label": t("lazy_7"), "action": "light_7d"},
+        {"label": t("lazy_no"), "action": "light_decline"},
     ]
     dialog = MascotDialog(image, message, buttons, on_action)
     dialog.exec()
@@ -402,13 +387,10 @@ def show_anomaly_busy(
 ) -> None:
     """Реакция на «Занят(а) сегодня»: understanding.png, выбор дней недели."""
     image = IMG_UNDERSTANDING
-    message = (
-        f"Понимаю, бывают такие дни. Хочешь, я настрою для тебя дни недели "
-        f"без новых карточек по «{deck_name}»?"
-    )
+    message = t("busy_msg", deck_name=deck_name)
     buttons = [
-        {"label": "Настроить дни недели", "action": "busy_setup_days", "primary": True},
-        {"label": "Не сегодня", "action": "busy_dismiss"},
+        {"label": t("busy_setup"), "action": "busy_setup_days", "primary": True},
+        {"label": t("busy_skip"), "action": "busy_dismiss"},
     ]
     dialog = MascotDialog(image, message, buttons, on_action)
     dialog.exec()
@@ -430,7 +412,7 @@ def show_day_of_week_picker(
         normalized_rules[int(k)] = v
 
     image = IMG_NEUTRAL
-    day_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    day_names = [t(f"day_{i}") for i in range(1, 8)]
 
     checkboxes_html = ""
     for i, name in enumerate(day_names, 1):
@@ -442,16 +424,13 @@ def show_day_of_week_picker(
             f'{name}</label>'
         )
 
-    message = (
-        f"В какие дни тебе обычно не до новых карточек по «{deck_name}»? "
-        f"Отметь их — я подстроюсь."
-    )
+    message = t("days_msg", deck_name=deck_name)
 
     colors = _get_theme_colors()
     html = build_day_picker_html(image, message, checkboxes_html, colors)
 
     dialog = QDialog(mw)
-    dialog.setWindowTitle("Anker — дни недели")
+    dialog.setWindowTitle(t("dlg_days_title"))
     dialog.setFixedSize(*DAY_PICKER_SIZE)
     dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
     dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; }}")

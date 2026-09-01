@@ -549,6 +549,11 @@ def _add_menu_item() -> None:
     settings_action.triggered.connect(_on_settings)
     anker_menu.addAction(settings_action)
 
+    # Language / Язык
+    lang_action = QAction("Language / Язык", mw)
+    lang_action.triggered.connect(_on_language)
+    anker_menu.addAction(lang_action)
+
     # Выбор колод
     select_action = QAction("Выбрать колоды…", mw)
     select_action.triggered.connect(_on_select_decks)
@@ -761,6 +766,16 @@ def _on_main_window_init() -> None:
     _apply_overrides_on_startup()
     QTimer.singleShot(2000, _daily_routine)
 
+def _on_language() -> None:
+    """Диалог выбора языка."""
+    try:
+        from .language_dialog import LanguageDialog
+        config = mw.addonManager.getConfig(__name__) or {}
+        dialog = LanguageDialog(config, __name__)
+        dialog.exec()
+    except Exception as e:
+        from aqt.utils import tooltip
+        tooltip(f"Anker: ошибка языка — {e}")
 
 if _ANKI_AVAILABLE:
     gui_hooks.main_window_did_init.append(_on_main_window_init)

@@ -13,6 +13,8 @@ from typing import List, Optional, Set
 
 from . import log
 
+from .i18n import t
+
 try:
     from aqt import mw
     from aqt.qt import (
@@ -48,7 +50,7 @@ class DeckSelectorDialog(QDialog):
 
     def __init__(self, addon_module_name: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Anker — выбор колод")
+        self.setWindowTitle(t("ds_title"))
         self.setMinimumSize(420, 480)
 
         self._addon_module_name = addon_module_name

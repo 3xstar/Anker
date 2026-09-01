@@ -117,6 +117,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # ── UI ──
     # Показывать ли логи решений в окне Anki.
     "show_decision_log": False,
+
+    # ── Язык интерфейса ──
+    # "ru" — русский, "en" — английский.
+    # Переключается через меню: Инструменты → Anker → Язык / Language.
+    "language": "ru",
 }
 
 

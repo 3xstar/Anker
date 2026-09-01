@@ -28,6 +28,9 @@ try:
     from . import log
 except ImportError:  # вне Anki (тесты) модуль импортируется как top-level
     import log
+    import i18n
+
+from .i18n import t
 
 
 # ── Пути к изображениям ────────────────────────────────────────────────────
@@ -302,8 +305,8 @@ __CSS__
   <div class="bottom-area">
     <div class="character"><img src="__IMAGE_URL__" alt="Anker"></div>
     <div class="buttons">
-      <button class="btn primary" onclick="pycmd('anker:days_done')">Готово</button>
-      <button class="btn" onclick="pycmd('anker:days_cancel')">Отмена</button>
+      <button class="btn primary" onclick="pycmd('anker:days_done')">{t('btn_done')}</button>
+      <button class="btn" onclick="pycmd('anker:days_cancel')">{t('btn_cancel')}</button>
     </div>
   </div>
   </div>
@@ -388,9 +391,9 @@ def build_dialog_html(
     css = _apply_theme_colors(SHARED_DIALOG_CSS, theme_colors)
 
     if deck_name and period:
-        stats_button_label = f"Статистика {deck_name} ({period} дн.)"
+        stats_button_label = t("stats_btn_deck", deck_name=deck_name, period=period)
     else:
-        stats_button_label = "Моя статистика"
+        stats_button_label = t("stats_btn_default")
 
     return (
         HTML_TEMPLATE
@@ -430,6 +433,8 @@ def build_day_picker_html(
         .replace("__MESSAGE__", message)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
         .replace("__CHECKBOXES_HTML__", checkboxes_html)
+        .replace("__DONE_LABEL__", t("btn_done"))
+        .replace("__CANCEL_LABEL__", t("btn_cancel"))
     )
 
 
@@ -635,7 +640,7 @@ def build_count_donut_svg(
     if total <= 0:
         return (
             '<div class="chart-empty-note">'
-            'Сегодня ещё нет пройденных карточек для этого графика.</div>'
+            + t("chart_empty_note") + '</div>'
         )
 
     ratio = part_value / total
@@ -830,13 +835,13 @@ def _metric_visualization_svg(
     if key == "actual_vs_predicted":
         counts = metrics.get("actual_vs_predicted_counts") or {}
         return build_bar_pair_svg(
-            "Ожидалось", counts.get("predicted"),
-            "Фактически", counts.get("actual"),
+            t("lbl_expected"), counts.get("predicted"),
+            t("lbl_actual"), counts.get("actual"),
         )
     if key == "avg_time_growth":
         return build_bar_pair_svg(
-            "Раньше", metrics.get("avg_time_prev"),
-            "Сейчас", metrics.get("avg_time_per_card"),
+            t("lbl_before"), metrics.get("avg_time_prev"),
+            t("lbl_now"), metrics.get("avg_time_per_card"),
         )
     if key == "consistency":
         return build_bar_chart_svg(metrics.get("daily_review_count", []))
@@ -847,8 +852,8 @@ def _metric_visualization_svg(
         return build_count_donut_svg(
             part_value=total_stuck,
             rest_value=total_healthy,
-            part_label="Застряли",
-            rest_label="В порядке",
+            part_label=t("donut_stuck"),
+            rest_label=t("donut_ok"),
         )
 
 
@@ -857,149 +862,116 @@ def _metric_visualization_svg(
 def _retention_explanation(retention: Optional[float]) -> str:
     """Готовые фразы-шаблоны для разных диапазонов True Retention."""
     if retention is None:
-        return "Недостаточно данных для оценки вспоминаемости."
+        return t("expl_retention_none")
     if retention < 0.50:
-        return (
-            "Вспоминаемость ниже 50% значит, что большая часть слов забывается "
-            "и требует повторного изучения почти с нуля."
-        )
+        return t("expl_retention_low")
     if retention < 0.70:
-        return (
-            "Вспоминаемость 50–70% — материал усваивается, но значительная "
-            "часть карточек требует повторных усилий."
-        )
+        return t("expl_retention_mid")
     if retention < 0.85:
-        return (
-            "Вспоминаемость 70–85% — хороший уровень. Большинство карточек "
-            "вспоминается уверенно, но есть куда расти."
-        )
-    return (
-        "Вспоминаемость выше 85% — отличный результат. Материал усваивается "
-        "уверенно, можно подумать об увеличении нагрузки."
-    )
+        return t("expl_retention_good")
+    return t("expl_retention_high")
 
 
 def _again_rate_explanation(again_rate: Optional[float]) -> str:
     """Готовые фразы-шаблоны для разных диапазонов Again-rate."""
     if again_rate is None:
-        return "Недостаточно данных для оценки доли повторных ошибок."
+        return t("expl_again_none")
     if again_rate > 0.25:
-        return (
-            "Доля ошибок выше 25% — признак перегрузки. Слишком много карточек "
-            "приходится переучивать заново."
-        )
+        return t("expl_again_high")
     if again_rate > 0.15:
-        return (
-            "Доля ошибок 15–25% — повышенный уровень. Часть материала "
-            "забывается быстрее, чем хотелось бы."
-        )
+        return t("expl_again_mid")
     if again_rate > 0.08:
-        return (
-            "Доля ошибок 8–15% — нормальный рабочий уровень. "
-            "Большинство повторений проходит успешно."
-        )
-    return (
-        "Доля ошибок ниже 8% — отлично. Карточки вспоминаются легко "
-        "и без усилий."
-    )
+        return t("expl_again_norm")
+    return t("expl_again_low")
 
 
 def _difficulty_explanation(difficulty: Optional[float]) -> str:
     """Готовые фразы-шаблоны для разных диапазонов сложности FSRS."""
     if difficulty is None:
-        return "Недостаточно данных для оценки сложности карточек."
+        return t("expl_diff_none")
     if difficulty > 7.0:
-        return (
-            "Средняя сложность выше 7 — карточки объективно трудные. "
-            "Стоит снизить темп добавления новых."
-        )
+        return t("expl_diff_high")
     if difficulty > 5.0:
-        return (
-            "Средняя сложность 5–7 — умеренный уровень. Карточки требуют "
-            "внимания, но не чрезмерно."
-        )
-    return (
-        "Средняя сложность ниже 5 — карточки относительно лёгкие. "
-        "Можно уверенно добавлять новый материал."
-    )
+        return t("expl_diff_mid")
+    return t("expl_diff_low")
 
 
 # ── Шаблоны пояснений для всех метрик ──────────────────────────────────────
 
 def _stability_explanation(stability: Optional[float]) -> str:
     if stability is None:
-        return "Недостаточно данных для оценки стабильности."
+        return t("expl_stab_none")
     if stability < 3:
-        return "Стабильность ниже 3 дней — карточки быстро забываются, интервалы короткие."
+        return t("expl_stab_low")
     if stability < 10:
-        return "Стабильность 3–10 дней — нормальный уровень, карточки закрепляются."
-    return "Стабильность выше 10 дней — отлично, интервалы между повторениями большие."
+        return t("expl_stab_mid")
+    return t("expl_stab_high")
 
 
 def _load_ratio_explanation(ratio: Optional[float]) -> str:
     if ratio is None:
-        return "Недостаточно данных для сравнения нагрузки."
+        return t("expl_load_none")
     if ratio > 1.3:
-        return "Фактическая нагрузка заметно выше прогноза — лимит, возможно, завышен."
+        return t("expl_load_high")
     if ratio > 1.1:
-        return "Фактическая нагрузка немного выше прогноза."
+        return t("expl_load_mid")
     if ratio > 0.9:
-        return "Фактическая нагрузка близка к прогнозу — всё в порядке."
-    return "Фактическая нагрузка ниже прогноза."
+        return t("expl_load_norm")
+    return t("expl_load_low")
 
 
 def _time_growth_explanation(growth: Optional[float]) -> str:
     if growth is None:
-        return "Недостаточно данных о времени на карточку."
+        return t("expl_time_none")
     if growth > 1.3:
-        return "На карточки стало уходить заметно больше времени, чем раньше, — возможно, ты устаёшь."
+        return t("expl_time_high")
     if growth > 1.1:
-        return "Время на карточку немного выросло по сравнению с прошлым периодом."
+        return t("expl_time_mid")
     if growth > 0.9:
-        return "Время на карточку стабильно — без резких скачков вверх или вниз."
-    return "Время на карточку снижается — материал усваивается быстрее."
+        return t("expl_time_norm")
+    return t("expl_time_low")
 
 
 def _consistency_explanation(consistency: Optional[float]) -> str:
     if consistency is None:
-        return "Недостаточно данных о регулярности занятий."
+        return t("expl_consist_none")
     if consistency < 0.3:
-        return "Регулярность низкая — занятия проходят нестабильно, это мешает закреплению."
+        return t("expl_consist_low")
     if consistency < 0.6:
-        return "Регулярность средняя — есть пропуски, но в целом ритм держится."
-    return "Регулярность высокая — стабильный график занятий."
+        return t("expl_consist_mid")
+    return t("expl_consist_high")
 
 
 def _stuck_explanation(stuck: Optional[float]) -> str:
     if stuck is None:
-        return "Нет данных о застрявших карточках."
+        return t("expl_stuck_none")
     if stuck > 10:
-        return "Много карточек застряло в переучивании — стоит обратить на них внимание."
+        return t("expl_stuck_high")
     if stuck > 3:
-        return "Несколько карточек застряло в переучивании."
-    return "Застрявших карточек мало или нет."
+        return t("expl_stuck_mid")
+    return t("expl_stuck_low")
 
 
 def _new_card_retention_explanation(ret: Optional[float]) -> str:
     if ret is None:
-        return "Недостаточно данных по новым карточкам."
+        return t("expl_newret_none")
     if ret < 0.50:
-        return "Новые карточки запоминаются тяжело — больше половины забывается."
+        return t("expl_newret_low")
     if ret < 0.70:
-        return "Новые карточки усваиваются средне."
+        return t("expl_newret_mid")
     if ret < 0.85:
-        return "Новые карточки усваиваются хорошо."
-    return "Новые карточки усваиваются отлично."
+        return t("expl_newret_good")
+    return t("expl_newret_high")
 
 
 def _low_stability_explanation(ratio: Optional[float]) -> str:
     if ratio is None:
-        return "Недостаточно данных о нестабильных карточках."
+        return t("expl_lowstab_none")
     if ratio > 0.4:
-        return "Много карточек с низкой стабильностью — материал ещё не закрепился."
+        return t("expl_lowstab_high")
     if ratio > 0.2:
-        return "Умеренная доля нестабильных карточек."
-    return "Мало нестабильных карточек — материал закрепляется хорошо."
+        return t("expl_lowstab_mid")
+    return t("expl_lowstab_low")
 
 
 # ── HTML-шаблон экрана обоснования с вкладками ─────────────────────────────
@@ -1123,17 +1095,17 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
       __DECK_TITLE_BLOCK__
       <div class="tabs">
         <button class="tab-btn __TAB_MAIN_ACTIVE__"
-         onclick="pycmd('anker:stats_tab_main')">Главное</button>
+         onclick="pycmd('anker:stats_tab_main')">__TAB_MAIN_LABEL__</button>
         <button class="tab-btn __TAB_SUMMARY_ACTIVE__"
-         onclick="pycmd('anker:stats_tab_summary')">Итог</button>
+         onclick="pycmd('anker:stats_tab_summary')">__TAB_SUMMARY_LABEL__</button>
         <button class="tab-btn __TAB_ALL_ACTIVE__"
-         onclick="pycmd('anker:stats_tab_all')">Все показатели</button>
+         onclick="pycmd('anker:stats_tab_all')">__TAB_ALL_LABEL__</button>
       </div>
       <div class="tab-content-scroll">__TAB_CONTENT__</div>
   </div>
   <div class="stats-bottom-area">
     <div class="character"><img src="__IMAGE_URL__" alt="Anker"></div>
-    <button class="btn primary stats-back-btn" onclick="pycmd('anker:stats_back')">Назад</button>
+    <button class="btn primary stats-back-btn" onclick="pycmd('anker:stats_back')">__BACK_LABEL__</button>
   </div>
 </body></html>"""
 
@@ -1187,16 +1159,18 @@ _METRIC_THRESHOLDS: Dict[str, tuple] = {
 
 # Готовые формулировки рекомендаций по метрикам (пункт 6 ТЗ).
 # Ключ совпадает с ключом метрики в _METRIC_THRESHOLDS.
+# Значение — ключ перевода в i18n.STRINGS (разрешается в момент рендера,
+# чтобы смена языка применялась без перезапуска Anki).
 _RECOMMENDATION_TEXTS: Dict[str, str] = {
-    "true_retention": "Уделяй чуть больше внимания повторениям — вспоминаемость сейчас ниже, чем хотелось бы.",
-    "new_card_retention": "Не спеши добавлять много новых карточек сразу — дай свежим словам закрепиться получше.",
-    "avg_difficulty": "Многие карточки объективно трудные — попробуй снизить темп добавления новых на время.",
-    "avg_stability": "Часть материала пока нестабильна в памяти — не лишним будет вернуться к нему через повторение.",
-    "low_stability_ratio": "Заметная доля карточек ещё не закрепилась прочно — им нужно больше времени и внимания.",
-    "actual_vs_predicted": "Нагрузка ощутимо выше, чем задумано, — стоит пересмотреть лимит новых карточек.",
-    "avg_time_growth": "На карточки уходит больше времени, чем раньше, — возможно, стоит сделать паузу или снизить темп.",
-    "consistency": "Занятия проходят нерегулярно — постарайся заниматься примерно в одном ритме, это помогает лучше запоминать.",
-    "relearning_stuck": "Немало карточек застряло в переучивании — стоит отдельно поработать именно над ними.",
+    "true_retention": "rec_true_retention",
+    "new_card_retention": "rec_new_card_retention",
+    "avg_difficulty": "rec_avg_difficulty",
+    "avg_stability": "rec_avg_stability",
+    "low_stability_ratio": "rec_low_stability_ratio",
+    "actual_vs_predicted": "rec_actual_vs_predicted",
+    "avg_time_growth": "rec_avg_time_growth",
+    "consistency": "rec_consistency",
+    "relearning_stuck": "rec_relearning_stuck",
 }
 
 
@@ -1211,18 +1185,28 @@ def _metric_color(key: str, value: Optional[float]) -> str:
 
 # ── Определения метрик для вкладки «Главное» ────────────────────────────────
 
-# (key, name, explain_fn, suffix)
+# (metric_key, i18n_key имени, explain_fn, unit)
+# unit: "%" — проценты, "days" — дни (локализуемый суффикс), "" — просто число.
 _MAIN_METRIC_DEFS: List[tuple] = [
-    ("true_retention", "Вспоминаемость", _retention_explanation, "%"),
-    ("new_card_retention", "Новые карточки", _new_card_retention_explanation, "%"),
-    ("avg_difficulty", "Средняя сложность", _difficulty_explanation, ""),
-    ("avg_stability", "Средняя стабильность", _stability_explanation, " дн."),
-    ("low_stability_ratio", "Доля нестабильных", _low_stability_explanation, "%"),
-    ("actual_vs_predicted", "Факт vs прогноз", _load_ratio_explanation, ""),
-    ("avg_time_growth", "Время на карточку", _time_growth_explanation, ""),
-    ("consistency", "Регулярность", _consistency_explanation, "%"),
-    ("relearning_stuck", "Застрявшие", _stuck_explanation, ""),
+    ("true_retention", "m_true_retention", _retention_explanation, "%"),
+    ("new_card_retention", "m_new_card_retention", _new_card_retention_explanation, "%"),
+    ("avg_difficulty", "m_avg_difficulty", _difficulty_explanation, ""),
+    ("avg_stability", "m_avg_stability", _stability_explanation, "days"),
+    ("low_stability_ratio", "m_low_stability_ratio", _low_stability_explanation, "%"),
+    ("actual_vs_predicted", "m_actual_vs_predicted", _load_ratio_explanation, ""),
+    ("avg_time_growth", "m_avg_time_growth", _time_growth_explanation, ""),
+    ("consistency", "m_consistency", _consistency_explanation, "%"),
+    ("relearning_stuck", "m_relearning_stuck", _stuck_explanation, ""),
 ]
+
+
+def _metric_display_value(value: float, unit: str) -> str:
+    """Форматирует значение метрики для показа с локализуемым суффиксом дней."""
+    if unit == "%":
+        return f"{int(value * 100)}%"
+    if unit == "days":
+        return f"{value:.1f}{t('unit_days')}"
+    return f"{value:.1f}" if isinstance(value, float) else str(value)
 
 
 def _resolve_metric_value(metrics: Dict[str, Any], key: str) -> Optional[float]:
@@ -1269,7 +1253,7 @@ def _build_main_tab_content(
                     scored.append((
                         weight,
                         f"again_rate_{maturity}",
-                        f"Доля ошибок ({'новые' if maturity == 'young' else 'зрелые'})",
+                        f"m_again_{maturity}",
                         _again_rate_explanation,
                         "%",
                         again,
@@ -1280,27 +1264,22 @@ def _build_main_tab_content(
     top = scored[:5]
 
     parts: List[str] = []
-    for _, key, name, explain_fn, suffix, value in top:
-        if suffix == "%":
-            display = f"{int(value * 100)}%"
-        elif suffix == " дн.":
-            display = f"{value:.1f}{suffix}"
-        else:
-            display = f"{value:.1f}" if isinstance(value, float) else str(value)
+    for _, key, name_key, explain_fn, unit, value in top:
+        display = _metric_display_value(value, unit)
 
         svg = _metric_visualization_svg(key, metrics, value)
         explanation = explain_fn(value)
         value_color = _metric_color(key, value)
 
         parts.append('<div class="stats-container">')
-        parts.append(f'<div class="metric-title">{name}</div>')
+        parts.append(f'<div class="metric-title">{t(name_key)}</div>')
         parts.append(f'<div class="metric-value" style="color:{value_color};">{display}</div>')
         if svg:
             parts.append(svg)
         parts.append(f'<div class="metric-explanation">{explanation}</div>')
         parts.append('</div>')
 
-    return "\n".join(parts) if parts else '<div class="stats-container"><div class="metric-title">Нет данных</div></div>'
+    return "\n".join(parts) if parts else f'<div class="stats-container"><div class="metric-title">{t("no_data")}</div></div>'
 
 
 def _metric_detail_html(
@@ -1326,57 +1305,48 @@ def _metric_detail_html(
 def _build_all_tab_content(metrics: Dict[str, Any], period: int = 7) -> str:
     """Собирает HTML для вкладки «Все показатели»."""
     rows_def = [
-        ("Вспоминаемость", "true_retention", _retention_explanation, "%",
-         "На графике — вспоминаемость по дням, в процентах."),
-        ("Новые карточки", "new_card_retention", _new_card_retention_explanation, "%",
-         "Шкала показывает долю успешно вспомненных новых карточек (0–100%). "
-         "Считается за последние 30 дней — не зависит от периода анализа."),
-        ("Средняя сложность", "avg_difficulty", _difficulty_explanation, "",
-         "Шкала показывает текущий уровень сложности от 0 до 10."),
-        ("Средняя стабильность", "avg_stability", _stability_explanation, " дн.",
-         "Шкала показывает стабильность карточек — количество дней, за которое "
-         "вспоминаемость падает до 90%."),
-        ("Доля нестабильных", "low_stability_ratio", _low_stability_explanation, "%",
-         "Показывает, какая доля карточек ещё нестабильна (могут забыться быстро)."),
-        ("Факт vs прогноз", "actual_vs_predicted", _load_ratio_explanation, "",
-         "Сравнение количества повторений: ожидалось vs фактически было пройдено."),
-        ("Время на карточку", "avg_time_growth", _time_growth_explanation, "",
-         "Сравнение среднего времени на карточку: раньше vs сейчас (в секундах)."),
-        ("Регулярность", "consistency", _consistency_explanation, "%",
-         "На графике — количество карточек, пройденных в этот день."),
-        ("Застрявшие карточки", "relearning_stuck", _stuck_explanation, "",
-         "На диаграмме — сколько из карточек, пройденных сегодня, застряло, а сколько в порядке."),
+        ("m_true_retention", "true_retention", _retention_explanation, "%",
+         "cap_true_retention"),
+        ("m_new_card_retention", "new_card_retention", _new_card_retention_explanation, "%",
+         "cap_new_card_retention"),
+        ("m_avg_difficulty", "avg_difficulty", _difficulty_explanation, "",
+         "cap_avg_difficulty"),
+        ("m_avg_stability", "avg_stability", _stability_explanation, "days",
+         "cap_avg_stability"),
+        ("m_low_stability_ratio", "low_stability_ratio", _low_stability_explanation, "%",
+         "cap_low_stability_ratio"),
+        ("m_actual_vs_predicted", "actual_vs_predicted", _load_ratio_explanation, "",
+         "cap_actual_vs_predicted"),
+        ("m_avg_time_growth", "avg_time_growth", _time_growth_explanation, "",
+         "cap_avg_time_growth"),
+        ("m_consistency", "consistency", _consistency_explanation, "%",
+         "cap_consistency"),
+        ("m_relearning_stuck_full", "relearning_stuck", _stuck_explanation, "",
+         "cap_relearning_stuck"),
     ]
 
-    note = (
-        f"Ниже представлены показатели за {period} дн. "
-        "Они могут отличаться от общей статистики в Anki (Stats)."
-    )
+    note = t("stats_note", period=period)
     parts = [
         f'<div class="stats-note">{note}</div>',
         '<div class="all-metrics">',
     ]
-    for name, key, explain_fn, suffix, caption in rows_def:
+    for name_key, key, explain_fn, unit, caption_key in rows_def:
         value = metrics.get(key)
         if value is None:
             display = "—"
-        elif suffix == "%":
-            display = f"{int(value * 100)}%"
-        elif suffix == " дн.":
-            display = f"{value:.1f}{suffix}"
         else:
-            display = f"{value:.1f}" if isinstance(value, float) else str(value)
+            display = _metric_display_value(value, unit)
 
         desc = explain_fn(value)
         color = _metric_color(key, value)
 
         # Визуализация для сворачиваемого блока (sparkline/gauge/donut/столбцы)
-        detail_html = _metric_detail_html(key, metrics, value, caption)
+        detail_html = _metric_detail_html(key, metrics, value, t(caption_key))
 
         parts.append(
             f'<div class="metric-row" onclick="toggleMetricRow(this)">'
             f'<div class="metric-row-header">'
-            f'<div><div class="metric-row-name">{name}</div>'
+            f'<div><div class="metric-row-name">{t(name_key)}</div>'
             f'<div class="metric-row-desc">{desc}</div></div>'
             f'<div class="metric-row-value" style="color:{color};">{display}</div>'
             f'</div>'
@@ -1464,15 +1434,15 @@ def _build_summary_tab_content(
     # Комментарий по диапазону — описывает только текущее состояние,
     # без намёков на тренд (тренд покрывает блок сравнения с прошлым ниже).
     if score < 3.0:
-        comment = "Сейчас тебе непросто — материал плохо закрепляется, и это чувствуется. Ничего страшного, бывает у всех. Стоит притормозить и меньше нагружать себя, пока не наверстаешь."
+        comment = t("sum_comment_1")
     elif score < 5.0:
-        comment = "Результаты сейчас ниже обычного — часть материала выветривается быстрее, чем хотелось бы. Стоит немного сбавить темп и уделить время повторению того, что уже проходил."
+        comment = t("sum_comment_2")
     elif score < 7.0:
-        comment = "Ты держишься в целом нормально — ничего критичного, но и без большого запаса прочности. Есть куда расти, если добавить чуть больше внимания к повторениям."
+        comment = t("sum_comment_3")
     elif score < 8.5:
-        comment = "У тебя хорошо получается — материал закрепляется уверенно, сбоев почти нет. Продолжай в том же духе."
+        comment = t("sum_comment_4")
     else:
-        comment = "Отличный результат — ты закрепляешь материал очень уверенно и стабильно. Можно даже немного ускориться, если хочется двигаться быстрее."
+        comment = t("sum_comment_5")
 
     # Сравнение с прошлым
     compare_html = ""
@@ -1480,11 +1450,11 @@ def _build_summary_tab_content(
         prev = last_summary_score["value"]
         diff = score - prev
         if diff > 0.5:
-            compare_html = f"Стало заметно лучше, чем в прошлый раз (было {prev:.1f}/10)"
+            compare_html = t("sum_cmp_better", prev=f"{prev:.1f}")
         elif diff < -0.5:
-            compare_html = f"Немного просело по сравнению с прошлым разом (было {prev:.1f}/10)"
+            compare_html = t("sum_cmp_worse", prev=f"{prev:.1f}")
         else:
-            compare_html = f"Держится примерно на том же уровне (было {prev:.1f}/10)"
+            compare_html = t("sum_cmp_same", prev=f"{prev:.1f}")
 
     # Блок рекомендаций: топ-3 худших метрик (normalized < 0.5), отсортированных
     # по весу × насколько далеки от хорошего значения.
@@ -1498,18 +1468,18 @@ def _build_summary_tab_content(
 
     if weak:
         items = "\n".join(
-            f"<li>{_RECOMMENDATION_TEXTS[key]}</li>" for key, _, _ in weak
+            f"<li>{t(_RECOMMENDATION_TEXTS[key])}</li>" for key, _, _ in weak
         )
         recommendations_html = (
             '<div class="summary-recommendations">'
-            '<div class="summary-recommendations-title">Что можно улучшить</div>'
+            f'<div class="summary-recommendations-title">{t("rec_title")}</div>'
             f'<ul class="summary-recommendations-list">{items}</ul>'
             '</div>'
         )
     else:
         recommendations_html = (
             '<div class="summary-recommendations-empty">'
-            'Явных слабых мест не видно — можно просто продолжать в том же духе.'
+            + t("rec_empty") +
             '</div>'
         )
 
@@ -1519,7 +1489,7 @@ def _build_summary_tab_content(
     ]
     if period:
         parts.append(
-            f'<div class="summary-period-subtitle">Оценка статистики за {period} дн.</div>'
+            f'<div class="summary-period-subtitle">{t("summary_subtitle", period=period)}</div>'
         )
     parts.append(
         f'<div class="summary-score" style="color:{score_color};">{score_display}<span style="font-size:13px;">/10</span></div>'
@@ -1586,6 +1556,10 @@ def build_stats_tabbed_html(
         .replace("__TAB_SUMMARY_ACTIVE__", tab_summary_active)
         .replace("__TAB_MAIN_ACTIVE__", tab_main_active)
         .replace("__TAB_ALL_ACTIVE__", tab_all_active)
+        .replace("__TAB_MAIN_LABEL__", t("tab_main"))
+        .replace("__TAB_SUMMARY_LABEL__", t("tab_summary"))
+        .replace("__TAB_ALL_LABEL__", t("tab_all"))
+        .replace("__BACK_LABEL__", t("btn_back"))
         .replace("__TAB_CONTENT__", content)
         .replace("__DECK_TITLE_BLOCK__", deck_title_block)
         .replace("__IMAGE_URL__", image_data_uri(image_filename))
