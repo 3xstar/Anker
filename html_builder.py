@@ -94,9 +94,6 @@ def _font_faces_css() -> str:
 SHARED_DIALOG_CSS = """__FONT_FACES__
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
-    /* Убирает страничный скроллбар окна целиком — единственная нужная
-       прокрутка (для длинных списков показателей) реализована отдельно
-       через .tab-content-scroll с собственным overflow-y:auto. */
     overflow: hidden;
     height: 100%;
   }
@@ -105,28 +102,25 @@ SHARED_DIALOG_CSS = """__FONT_FACES__
     font-family: 'Nunito', -apple-system, "Segoe UI", sans-serif;
     background: __BG_COLOR__;
     padding: 0;
+    margin: 0;
   }
-  /* Вертикальное положение содержимого простого диалога — ПРОСТОЙ,
-     предсказуемый фиксированный отступ сверху в пикселях, а не
-     flex/grid/absolute-центрирование (два предыдущих подхода на практике
-     давали асимметричный результат в этом окружении). Окно диалога имеет
-     строго фиксированную высоту 440px (см. DIALOG_SIZE в mascot_ui.py).
-
-     РУЧНАЯ ПОДСТРОЙКА: если отступ снизу визуально больше/меньше отступа
-     сверху — поменяй ЧИСЛО в margin-top ниже. Увеличить число — сдвинуть
-     содержимое ВНИЗ. Уменьшить — сдвинуть ВВЕРХ. Больше в файле ничего
-     трогать не нужно, это единственное значение, отвечающее за положение. */
   .dialog-content {
     width: 100%;
     max-width: 420px;
-    margin: 60px auto 0 auto;
+    margin: 0 auto;
     padding: 0 20px;
     box-sizing: border-box;
   }
-  /* Экран статистики не использует .dialog-content — там своя вёрстка
-     (см. body.stats-screen ниже), растянутая на всю ширину и прижатая
-     кверху/центрированная отдельно под контент, который может быть длиннее. */
-
+  /* Специальный класс для центрирования только основного диалога */
+  .dialog-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 20px;
+  }
   /* ── Спич-бабл ── */
   .bubble-wrapper {
     width: 100%;
@@ -234,6 +228,23 @@ SHARED_DIALOG_CSS = """__FONT_FACES__
     cursor:pointer; padding:10px 16px;
     text-decoration:underline; transition:opacity 0.15s;
   }
+  /* Нижняя часть статистики — персонаж слева, кнопка справа */
+  .stats-bottom-area {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 420px;
+    margin: 12px auto 0 auto;
+  }
+  .stats-back-btn {
+    width: auto;
+    min-width: 120px;
+  }
+  /* Персонаж в экране статистики уменьшен */
+  body.stats-screen .character img {
+    width: 72px;
+  }
   .btn-link:hover { opacity:0.85; }
 """
 
@@ -248,22 +259,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 __CSS__
 </style>
 </head>
-<body>
-  <div class="dialog-content">
-  <div class="bubble-wrapper">
-    <div class="bubble">__MESSAGE__</div>
-  </div>
-  <div class="bottom-area">
-    <div class="character">
-      <img src="__IMAGE_URL__" alt="Anker">
+<body style="height: 100vh; margin: 0; padding: 0; overflow: hidden;">
+  <div class="dialog-main">
+    <div class="dialog-content">
+      <div class="bubble-wrapper">
+        <div class="bubble">__MESSAGE__</div>
+      </div>
+      <div class="bottom-area">
+        <div class="character">
+          <img src="__IMAGE_URL__" alt="Anker">
+        </div>
+        <div class="buttons">
+          __BUTTONS_HTML__
+        </div>
+      </div>
+      <div class="stats-link-row">
+        <button class="btn-link" onclick="pycmd('anker:show_stats')">__STATS_BUTTON_LABEL__</button>
+      </div>
     </div>
-    <div class="buttons">
-      __BUTTONS_HTML__
-    </div>
-  </div>
-  <div class="stats-link-row">
-    <button class="btn-link" onclick="pycmd('anker:show_stats')">__STATS_BUTTON_LABEL__</button>
-  </div>
   </div>
 </body>
 </html>"""
@@ -811,7 +824,7 @@ def _metric_visualization_svg(
     if key == "avg_difficulty":
         return build_gauge_svg(value, min_value=0.0, max_value=10.0)
     if key == "avg_stability":
-        return build_gauge_svg(value, min_value=0.0, max_value=60.0, reverse=True)
+        return build_gauge_svg(value, min_value=0.0, max_value=15.0, reverse=True)
     if key == "low_stability_ratio":
         return build_donut_svg(value)
     if key == "actual_vs_predicted":
@@ -1055,7 +1068,8 @@ __CSS__
   .summary-recommendations-empty { font-size:16px; color:__TEXT_COLOR__; opacity:0.7; margin:12px 16px; }
   /* Аналитическая панель для экрана статистики — независима от .bubble */
   .stats-panel {
-    width: 100%;
+    width: calc(100% - 40px);  /* ← учитываем margin */
+    max-width: 720px;           /* ← ограничиваем ширину */
     background: __FRAME_BG_COLOR__;
     border: 2px solid __BORDER_COLOR__;
     border-radius: 16px;
@@ -1063,6 +1077,7 @@ __CSS__
     box-sizing: border-box;
     color: __TEXT_COLOR__;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin: 20px auto;          /* ← центрируем */
   }
   /* Экран статистики: body растягивает дочерние блоки на всю ширину и
      центрируется по вертикали — панель со статистикой + маскот + кнопка
@@ -1082,10 +1097,10 @@ __CSS__
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    justify-content: flex-start;
+    justify-content: center;
     min-height: 0;
-    padding: 20px;
-    margin-top: 0;
+    padding: 0;
+    margin: 0;
   }
   body.stats-screen .bottom-area {
     max-width: 420px;
@@ -1116,11 +1131,9 @@ function toggleMetricRow(el) { el.classList.toggle('expanded'); }
       </div>
       <div class="tab-content-scroll">__TAB_CONTENT__</div>
   </div>
-  <div class="bottom-area">
+  <div class="stats-bottom-area">
     <div class="character"><img src="__IMAGE_URL__" alt="Anker"></div>
-    <div class="buttons">
-      <button class="btn primary" onclick="pycmd('anker:stats_back')">Назад</button>
-    </div>
+    <button class="btn primary stats-back-btn" onclick="pycmd('anker:stats_back')">Назад</button>
   </div>
 </body></html>"""
 
