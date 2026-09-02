@@ -772,9 +772,12 @@ def _on_language() -> None:
         from .language_dialog import LanguageDialog
         config = mw.addonManager.getConfig(__name__) or {}
         dialog = LanguageDialog(config, __name__)
-        dialog.exec()
+        if dialog.exec():
+            # Обновляем кэш языка в i18n
+            from .i18n import set_lang
+            new_lang = config.get("language", "ru")
+            set_lang(new_lang)
     except Exception as e:
-        from aqt.utils import tooltip
         tooltip(f"Anker: ошибка языка — {e}")
 
 if _ANKI_AVAILABLE:

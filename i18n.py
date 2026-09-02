@@ -475,3 +475,9 @@ def set_lang(lang: str) -> None:
     """Принудительно устанавливает язык (для диалога выбора)."""
     global _cached_lang
     _cached_lang = lang if lang in (LANG_RU, LANG_EN) else LANG_RU
+
+def refresh_cache() -> None:
+    """Принудительно обновляет кэш языка из config.json."""
+    global _cached_lang, _cached_mtime
+    _cached_mtime = None
+    _cached_lang = get_lang()

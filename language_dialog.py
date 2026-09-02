@@ -4,7 +4,7 @@ language_dialog.py — диалог выбора языка.
 
 try:
     from aqt import mw
-    from aqt.qt import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, Qt
+    from aqt.qt import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, Qt, QPalette
     from aqt.utils import tooltip
 except ImportError:
     pass
@@ -19,13 +19,24 @@ class LanguageDialog(QDialog):
         self._addon_module_name = addon_module_name
         self._selected = config.get("language", "ru")
 
+        # Получаем цвета из темы Anki
+        try:
+            palette = mw.app.palette()
+            bg_color = palette.color(QPalette.ColorRole.Window).name()
+            text_color = palette.color(QPalette.ColorRole.WindowText).name()
+            base_color = palette.color(QPalette.ColorRole.Base).name()
+        except Exception:
+            bg_color = "#f5f5f7"
+            text_color = "#1f1f23"
+            base_color = "#ffffff"
+
         self.setWindowTitle("Anker — Language / Язык")
         self.setMinimumWidth(350)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f5f5f7;
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {bg_color};
                 border-radius: 12px;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -33,7 +44,7 @@ class LanguageDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
 
         title = QLabel("Choose language / Выберите язык")
-        title.setStyleSheet("font-size: 16px; font-weight: 700; color: #1f1f23;")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {text_color};")
         layout.addWidget(title)
 
         self.ru_btn = self._create_button("Русский")
@@ -48,18 +59,19 @@ class LanguageDialog(QDialog):
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedHeight(36)
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e5e5ea;
-                border: none;
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {base_color};
+                color: {text_color};
+                border: 1px solid #c8c8ce;
                 border-radius: 8px;
                 font-size: 14px;
                 font-weight: 600;
                 padding: 0 16px;
-            }
-            QPushButton:hover {
-                background-color: #d1d1d6;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: #c8c8ce;
+            }}
         """)
         cancel_btn.clicked.connect(self.reject)
 
@@ -126,8 +138,9 @@ class LanguageDialog(QDialog):
     def _save(self):
         self._config["language"] = self._selected
         try:
+            # Используем уже импортированный mw из начала файла
             mw.addonManager.writeConfig(self._addon_module_name, self._config)
-            # Сбрасываем кэш языка
+            from .i18n import set_lang
             set_lang(self._selected)
             tooltip(f"Anker language set to: {self._selected}")
             self.accept()
