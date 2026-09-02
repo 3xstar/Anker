@@ -39,6 +39,7 @@ from . import schedule_overrides
 from . import mascot_ui
 from . import deck_selector
 from . import log
+from .i18n import t  # ← импорт в начале файла
 
 # ── Константы ──────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ def _set_deck_limit(did: int, limit: int) -> None:
         conf.setdefault("new", {})["perDay"] = max(1, int(limit))
         mw.col.decks.update_config(conf)
     except Exception as e:
-        tooltip(f"Anker: не удалось изменить лимит колоды: {e}")
+        tooltip(t("tt_limit_err", err=str(e)))
 
 
 # ── Ежедневная рутина (per-deck) ───────────────────────────────────────────
@@ -392,7 +393,7 @@ def _show_lazy_flow(
             )
             new_limit = max(1, int(current * percent))
             _set_deck_limit(deck_id, new_limit)
-            tooltip(f"Anker: лёгкий режим для «{deck_name}» на {duration} дн.")
+            tooltip(t("tt_light", deck_name=deck_name, days=duration))
         elif action == "light_decline":
             pass
         on_done()
@@ -487,15 +488,16 @@ def _apply_decision(
 
     if action == "increase":
         target = current + step
+        tooltip(t("tt_limit_up", target=target))
     elif action == "decrease":
         target = current - step
+        tooltip(t("tt_limit_down", target=target))
     else:
         return
 
     target = max(1, target)
     _set_deck_limit(deck_id, target)
     ds["last_change_day"] = today.isoformat()
-    tooltip(f"Anker: лимит изменён ({action}), новый ≈ {target}")
 
 
 # ── Применение override-правил при старте (per-deck) ───────────────────────
@@ -544,33 +546,28 @@ def _add_menu_item() -> None:
 
     anker_menu = menu.addMenu("Anker")
 
-    # Настройки
-    settings_action = QAction("Настройки…", mw)
+    # Все пункты с двойными названиями
+    settings_action = QAction("Settings / Настройки…", mw)
     settings_action.triggered.connect(_on_settings)
     anker_menu.addAction(settings_action)
 
-    # Language / Язык
     lang_action = QAction("Language / Язык", mw)
     lang_action.triggered.connect(_on_language)
     anker_menu.addAction(lang_action)
 
-    # Выбор колод
-    select_action = QAction("Выбрать колоды…", mw)
+    select_action = QAction("Select decks / Выбрать колоды…", mw)
     select_action.triggered.connect(_on_select_decks)
     anker_menu.addAction(select_action)
 
-    # Запустить анализ сейчас (тест) — реальный расчётный путь
-    force_action = QAction("Запустить анализ сейчас (тест)", mw)
+    force_action = QAction("Run analysis now (test) / Запустить анализ сейчас (тест)", mw)
     force_action.triggered.connect(_on_force_analysis)
     anker_menu.addAction(force_action)
 
-    # Показать маскота (тест)
-    test_action = QAction("Показать маскота (тест)", mw)
+    test_action = QAction("Show mascot (test) / Показать маскота (тест)", mw)
     test_action.triggered.connect(_on_test_mascot)
     anker_menu.addAction(test_action)
 
-    # Сбросить состояние
-    reset_action = QAction("Сбросить состояние", mw)
+    reset_action = QAction("Reset state / Сбросить состояние", mw)
     reset_action.triggered.connect(_on_reset_state)
     anker_menu.addAction(reset_action)
 
@@ -581,18 +578,18 @@ def _on_settings() -> None:
     period = int(config.get("analysis_period_days", 7))
 
     dlg = QDialog(mw)
-    dlg.setWindowTitle("Anker — настройки")
+    dlg.setWindowTitle(t("set_title"))
     dlg.setMinimumWidth(360)
     layout = QVBoxLayout(dlg)
 
-    label = QLabel("Период анализа (дней):\nОпределяет, как часто Anker проверяет статистику\nи за какой промежуток она считается.")
+    label = QLabel(t("set_label"))
     label.setWordWrap(True)
     layout.addWidget(label)
 
     spin = QSpinBox()
     spin.setRange(2, 30)
     spin.setValue(period)
-    spin.setSuffix(" дн.")
+    spin.setSuffix(t("unit_days"))
     layout.addWidget(spin)
 
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -604,7 +601,7 @@ def _on_settings() -> None:
         new_period = spin.value()
         config["analysis_period_days"] = new_period
         mw.addonManager.writeConfig(__name__, config)
-        tooltip(f"Anker: период анализа — {new_period} дн.")
+        tooltip(t("set_saved", period=new_period))
 
 
 def _on_select_decks() -> None:
@@ -615,9 +612,9 @@ def _on_select_decks() -> None:
             config = mw.addonManager.getConfig(__name__) or {}
             config["tracked_deck_ids"] = selected
             mw.addonManager.writeConfig(__name__, config)
-            tooltip(f"Anker: выбрано колод — {len(selected)}")
+            tooltip(t("tt_decks", n=len(selected)))
         except Exception as e:
-            showInfo(f"Не удалось сохранить настройки: {e}")
+            showInfo(t("msg_save_err", err=str(e)))
 
 
 def _on_test_mascot() -> None:
@@ -629,15 +626,15 @@ def _on_test_mascot() -> None:
         load_score=0.0,
         new_limit=20,
         step=0,
-        reasons=["Тестовый запуск."],
+        reasons=[t("test_reason")],
         is_stable_streak=False,
         is_too_easy=False,
     )
 
     def on_action(action: str) -> None:
-        tooltip(f"Anker test action: {action}")
+        tooltip(t("tt_test", action=action))
 
-    mascot_ui.show_planned_visit(test_decision, "Тестовая колода", on_action)
+    mascot_ui.show_planned_visit(test_decision, "Test deck", on_action)
 
 
 def _on_force_analysis() -> None:
@@ -671,10 +668,7 @@ def _force_analysis() -> None:
     tracked_ids = valid_ids
 
     if not tracked_ids:
-        showInfo(
-            "Нет выбранной колоды. Выберите хотя бы одну колоду для теста "
-            "в настройках Anker: Anker → Выбрать колоды…"
-        )
+        showInfo(t("msg_no_deck"))
         return
 
     pending: List[Tuple[str, int, str, Any, Any]] = []
@@ -688,12 +682,10 @@ def _force_analysis() -> None:
         if not deck_metrics.get("has_enough_history", False):
             min_days = int(config.get("min_history_days", 7))
             actual_days = deck_metrics.get("history_days", 0)
-            showInfo(
-                f"Колода «{deck_name}»: недостаточно истории — "
-                f"нужно минимум {min_days} дн., сейчас {actual_days}.\n\n"
-                f"Совет: для быстрой проверки можно временно занизить "
-                f"min_history_days в конфиге аддона (например, до 1)."
-            )
+            showInfo(t("msg_history",
+                       deck_name=deck_name,
+                       min_days=min_days,
+                       actual_days=actual_days))
             continue
 
         streaks = ds.get("streaks", {"anomaly_free_days": 0, "too_easy_days": 0})
@@ -743,7 +735,7 @@ def _on_reset_state() -> None:
         mw.addonManager.writeConfig(__name__, config)
     except Exception as e:
         log.log_error("_on_reset_state", e)
-    tooltip("Anker: состояние сброшено, выбор колод очищен.")
+    tooltip(t("tt_reset"))
 
 
 # ── Вспомогательные ────────────────────────────────────────────────────────
@@ -766,19 +758,21 @@ def _on_main_window_init() -> None:
     _apply_overrides_on_startup()
     QTimer.singleShot(2000, _daily_routine)
 
+
 def _on_language() -> None:
     """Диалог выбора языка."""
     try:
         from .language_dialog import LanguageDialog
+        from .i18n import set_lang, refresh_cache
         config = mw.addonManager.getConfig(__name__) or {}
         dialog = LanguageDialog(config, __name__)
         if dialog.exec():
-            # Обновляем кэш языка в i18n
-            from .i18n import set_lang
             new_lang = config.get("language", "ru")
             set_lang(new_lang)
+            refresh_cache()  # ← обязательно для обновления кэша
     except Exception as e:
         tooltip(f"Anker: ошибка языка — {e}")
+
 
 if _ANKI_AVAILABLE:
     gui_hooks.main_window_did_init.append(_on_main_window_init)

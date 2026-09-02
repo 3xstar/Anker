@@ -63,12 +63,8 @@ class DeckSelectorDialog(QDialog):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # Предупреждение о двойном учёте (скрыто по умолчанию)
-        self.warning_label = QLabel(
-            "⚠ Некоторые колоды вложены друг в друга — "
-            "это приведёт к двойному учёту карточек. "
-            "Оставьте только родительскую колоду."
-        )
+        # Предупреждение о двойном учёте
+        self.warning_label = QLabel(t("ds_warning"))
         self.warning_label.setStyleSheet(
             "color: #c75b00; font-size: 12px; padding: 4px 8px;"
         )
@@ -78,7 +74,7 @@ class DeckSelectorDialog(QDialog):
 
         # Поле поиска
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Поиск колоды…")
+        self.search_edit.setPlaceholderText(t("ds_search"))
         self.search_edit.textChanged.connect(self._apply_filter)
         layout.addWidget(self.search_edit)
 
@@ -89,9 +85,9 @@ class DeckSelectorDialog(QDialog):
 
         # Кнопки
         button_row = QHBoxLayout()
-        self.select_all_btn = QPushButton("Выбрать все")
-        self.select_none_btn = QPushButton("Снять все")
-        self.close_btn = QPushButton("Готово")
+        self.select_all_btn = QPushButton(t("ds_all"))
+        self.select_none_btn = QPushButton(t("ds_none"))
+        self.close_btn = QPushButton(t("btn_done"))  # используем общий ключ
         self.select_all_btn.clicked.connect(self._select_all)
         self.select_none_btn.clicked.connect(self._select_none)
         self.close_btn.clicked.connect(self._validate_and_accept)
@@ -193,6 +189,7 @@ class DeckSelectorDialog(QDialog):
                     pass
         self.warning_label.hide()
 
+    # deck_selector.py, _validate_and_accept()
     def _validate_and_accept(self) -> None:
         """Проверяет на конфликты перед сохранением."""
         selected = list(self._selected)
@@ -203,18 +200,12 @@ class DeckSelectorDialog(QDialog):
                 continue
             for did_b in selected[i + 1:]:
                 if did_b in children_a:
-                    tooltip(
-                        "Нельзя выбрать родительскую и дочернюю колоду одновременно. "
-                        "Оставьте только родительскую."
-                    )
+                    tooltip(t("ds_conflict"))
                     return
                 try:
                     children_b = set(mw.col.decks.deck_and_child_ids(did_b))
                     if did_a in children_b:
-                        tooltip(
-                            "Нельзя выбрать родительскую и дочернюю колоду одновременно. "
-                            "Оставьте только родительскую."
-                        )
+                        tooltip(t("ds_conflict"))
                         return
                 except Exception:
                     pass

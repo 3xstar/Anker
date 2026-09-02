@@ -135,13 +135,14 @@ class LanguageDialog(QDialog):
         self.ru_btn.setChecked(self._selected == "ru")
         self.en_btn.setChecked(self._selected == "en")
 
+    # language_dialog.py, метод _save
     def _save(self):
         self._config["language"] = self._selected
         try:
-            # Используем уже импортированный mw из начала файла
             mw.addonManager.writeConfig(self._addon_module_name, self._config)
-            from .i18n import set_lang
+            from .i18n import set_lang, refresh_cache
             set_lang(self._selected)
+            refresh_cache()  # ← добавить это
             tooltip(f"Anker language set to: {self._selected}")
             self.accept()
         except Exception as e:

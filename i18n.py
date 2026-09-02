@@ -1,13 +1,8 @@
 """
 i18n.py — локализация аддона Anker (русский / английский).
 
-Язык хранится в config.json аддона (ключ "language": "ru" | "en").
-Модуль читает этот файл напрямую с кэшем по mtime — поэтому работает
-одинаково и внутри Anki (после mw.addonManager.writeConfig mtime меняется
-и кэш обновляется сам), и в чистых тестах без aqt.
-
-t(key, **kwargs) возвращает строку на текущем языке; неизвестный ключ
-возвращается как есть (падение интерфейса из-за перевода исключено).
+Язык хранится в meta.json аддона (поле "config", ключ "language").
+Модуль читает этот файл напрямую с кэшем по mtime.
 """
 
 import json
@@ -16,7 +11,8 @@ import os
 LANG_RU = "ru"
 LANG_EN = "en"
 
-_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# Читаем из meta.json, где Anki хранит конфигурацию
+_META_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meta.json")
 
 STRINGS = {
     # ─────────────────────────── РУССКИЙ ───────────────────────────
@@ -437,8 +433,6 @@ STRINGS = {
 }
 
 
-# ── Чтение языка из config.json (с кэшем по mtime) ────────────────────────
-
 _cached_lang = LANG_RU
 _cached_mtime = None
 
@@ -447,11 +441,13 @@ def get_lang() -> str:
     """Текущий язык интерфейса: 'ru' или 'en' (по умолчанию 'ru')."""
     global _cached_lang, _cached_mtime
     try:
-        mtime = os.path.getmtime(_CONFIG_PATH)
+        mtime = os.path.getmtime(_META_PATH)
         if _cached_mtime is None or mtime != _cached_mtime:
-            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            lang = cfg.get("language", LANG_RU)
+            with open(_META_PATH, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            # Язык хранится в meta.json["config"]["language"]
+            config = meta.get("config", {})
+            lang = config.get("language", LANG_RU)
             _cached_lang = lang if lang in (LANG_RU, LANG_EN) else LANG_RU
             _cached_mtime = mtime
     except Exception:
@@ -469,15 +465,15 @@ def t(key: str, **kwargs) -> str:
         text = text.format(**kwargs)
     return text
 
-# ── Установка языка (для LanguageDialog) ───────────────────────────────────
 
 def set_lang(lang: str) -> None:
     """Принудительно устанавливает язык (для диалога выбора)."""
     global _cached_lang
     _cached_lang = lang if lang in (LANG_RU, LANG_EN) else LANG_RU
 
+
 def refresh_cache() -> None:
-    """Принудительно обновляет кэш языка из config.json."""
+    """Принудительно обновляет кэш языка из meta.json."""
     global _cached_lang, _cached_mtime
     _cached_mtime = None
     _cached_lang = get_lang()
